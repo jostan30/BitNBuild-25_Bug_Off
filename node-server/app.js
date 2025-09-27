@@ -4,12 +4,12 @@ import rateLimit from "express-rate-limit";
 import connectDB from "./utils/db.js";
 
 import authRoutes from  "./routers/auth-router.js";
-import eventRoutes from "./routers/event-router.js"
-import ticketRoutes from "./routers/ticket-router.js"
-
+import eventRoutes from "./routers/event-router.js";
+import ticketRoutes from "./routers/ticket-router.js";
+import paymentRoutes from "./routers/payment-router.js"; // <-- Add payment router
 
 const app = express();
-app.use(express.json()); // <-- Add this line
+app.use(express.json()); // Parse JSON bodies
 
 const PORT = process.env.PORT || 5000;
 
@@ -24,21 +24,23 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
+// Health check / test API
 app.get("/", (req, res) => {
-  res.send("Hello World!");
+  res.send({ message: "Server is running!" });
 });
 
+// Custom APIs
+app.use('/api/auth', authRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/payments', paymentRoutes); // <-- Mount payment routes
 
-//custom apis
-app.use('/api/auth' ,authRoutes);
-app.use('/api/events' ,eventRoutes);
-app.use('/api/tickts' ,ticketRoutes);
-
-
-connectDB().then(() => {
+connectDB()
+  .then(() => {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
+      console.log(`Server is running on port ${PORT}`);
     });
-}).catch((err) => {
+  })
+  .catch((err) => {
     console.error("Failed to start server:", err);
-});
+  });
