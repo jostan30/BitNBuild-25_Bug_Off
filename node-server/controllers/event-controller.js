@@ -1,6 +1,6 @@
 import  Event  from "../models/Event.js";
 import  TicketClass  from "../models/TicketClass.js";
-
+import { createEventTicket } from "../utils/blockchain.js";
 // Create Event + Ticket Classes (Organizer Only)
 export const createEvent = async (req, res) => {
   try {
@@ -25,20 +25,29 @@ export const createEvent = async (req, res) => {
 
     await event.save();
 
-    // Optional: Create Ticket Classes
     if (ticketClasses && ticketClasses.length > 0) {
       const createdClasses = [];
+      
       for (const cls of ticketClasses) {
+        if (!cls.type || !cls.maxSupply || !cls.price) {
+          return res.status(400).json({ message: "Each ticket class must have type, maxSupply, and price" });
+        }
+
+        const {tokenId, supplyKey} = await createEventTicket(event._id, req.user.walletId, req.user.privateKey);
+
         const ticketClass = new TicketClass({
           eventId: event._id,
           type: cls.type,
           maxSupply: cls.maxSupply,
           price: cls.price,
-          tokenAddress: cls.tokenAddress || null,
+          tokenAddress: tokenId,
+          supplyKey: supplyKey,
         });
+        
         await ticketClass.save();
         createdClasses.push(ticketClass._id);
       }
+      
       event.ticketClasses = createdClasses;
       await event.save();
     }

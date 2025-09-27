@@ -1,6 +1,7 @@
 import User from "../models/User.js"; 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { createAccount } from "../utils/blockchain.js";
 
 // REGISTER
 export const register = async (req, res) => {
@@ -18,7 +19,8 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // create user
-    const newUser = new User({ username, email, password: hashedPassword, role });
+    const {accountId, privateKey, publicKey} = await createAccount();
+    const newUser = new User({ username, email, password: hashedPassword, role, walletId: accountId, privateKey });
     await newUser.save();
 
     res.status(201).json({ message: "User registered successfully" });

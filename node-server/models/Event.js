@@ -8,8 +8,8 @@ const eventSchema = new mongoose.Schema({
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
   ticketExpiryHours: { type: Number, default: 4 },
-  category: { type: String },      // e.g., Music, Sports, Conference
-  image: { type: String },         // URL to event image
+  category: { type: String },
+  image: { type: String },
   ticketClasses: [{ type: mongoose.Schema.Types.ObjectId, ref: "TicketClass" }],
   createdAt: { type: Date, default: Date.now }
 });
