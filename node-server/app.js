@@ -3,7 +3,14 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import connectDB from "./utils/db.js";
 
+import authRoutes from  "./routers/auth-router.js";
+import eventRoutes from "./routers/event-router.js"
+import ticketRoutes from "./routers/ticket-router.js"
+
+
 const app = express();
+app.use(express.json()); // <-- Add this line
+
 const PORT = process.env.PORT || 5000;
 
 // Rate limiter
@@ -20,6 +27,12 @@ app.use(limiter);
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
+
+
+//custom apis
+app.use('/api/auth' ,authRoutes);
+app.use('/api/events' ,eventRoutes);
+app.use('/api/tickts' ,ticketRoutes);
 
 
 connectDB().then(() => {
