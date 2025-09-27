@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import type { Map as LeafletMap, Marker as LeafletMarker } from 'leaflet';
 
 interface MapProps {
   lat: number;
@@ -10,6 +11,11 @@ interface MapProps {
   name: string;
 }
 
+// Extend HTMLElement to include Leaflet's _leaflet_id
+interface LeafletContainer extends HTMLElement {
+  _leaflet_id?: number;
+}
+
 const MapComponent: React.FC<MapProps> = ({ lat, lng, venue, location, name }) => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
@@ -17,11 +23,10 @@ const MapComponent: React.FC<MapProps> = ({ lat, lng, venue, location, name }) =
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    let mapInstance: any = null;
+    let mapInstance: LeafletMap | null = null;
 
     const loadMap = async () => {
       try {
-        // Dynamically import leaflet
         const L = (await import('leaflet')).default;
 
         // Add Leaflet CSS if not already present
@@ -34,17 +39,26 @@ const MapComponent: React.FC<MapProps> = ({ lat, lng, venue, location, name }) =
 
         // Fix default markers
         if (L.Icon && L.Icon.Default) {
-          delete (L.Icon.Default.prototype as any)._getIconUrl;
+          const iconDefault = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => void };
+          delete iconDefault._getIconUrl;
+
           L.Icon.Default.mergeOptions({
-            iconRetinaUrl: '/leaflet/marker-icon-2x.png',
-            iconUrl: '/leaflet/marker-icon.png',
-            shadowUrl: '/leaflet/marker-shadow.png',
+            iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+            iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
           });
         }
 
-        const mapContainer = document.getElementById('event-map');
+        const mapContainer = document.getElementById('event-map') as LeafletContainer | null;
         if (!mapContainer) return;
 
+        // Prevent multiple initializations
+        if (mapContainer._leaflet_id) {
+          setMapLoaded(true);
+          return;
+        }
+
+        // Initialize the map
         mapInstance = L.map(mapContainer, {
           center: [lat, lng],
           zoom: 15,
@@ -54,7 +68,8 @@ const MapComponent: React.FC<MapProps> = ({ lat, lng, venue, location, name }) =
           attribution: '&copy; OpenStreetMap contributors',
         }).addTo(mapInstance);
 
-        const marker = L.marker([lat, lng]).addTo(mapInstance)
+        // Add marker with popup
+        const marker: LeafletMarker = L.marker([lat, lng]).addTo(mapInstance)
           .bindPopup(`<b>${venue}</b><br>${location}<br>${name}`)
           .openPopup();
 
@@ -74,7 +89,7 @@ const MapComponent: React.FC<MapProps> = ({ lat, lng, venue, location, name }) =
   }, [lat, lng, venue, location, name]);
 
   return (
-    <div className="bg-white/30 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg overflow-hidden mt-6">
+    <div className="bg-white/30 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg overflow-hidden mt-6 relative">
       <div className="bg-gradient-to-br from-[#F4FFEE] to-[#CDBBB9] p-4">
         <h3 className="font-bold text-[#003447]">Event Location</h3>
         <p className="text-[#441111]">{venue}</p>

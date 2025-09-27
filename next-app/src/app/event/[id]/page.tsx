@@ -6,8 +6,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MapComponent from '@/components/MapComponent';
+import { useRouter } from 'next/navigation';
 
 const EventDetailPage: React.FC = () => {
+    const router =useRouter();
     const [isLiked, setIsLiked] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [mintingState, setMintingState] = useState({
@@ -134,7 +136,9 @@ const EventDetailPage: React.FC = () => {
                 <div className="max-w-7xl mx-auto">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
-                            <button className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20">
+                            <button 
+                            onClick={()=>router.push('/event')}
+                            className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20">
                                 <ArrowLeft className="h-6 w-6 text-[#003447]" />
                             </button>
                             <div className="flex items-center gap-3">
