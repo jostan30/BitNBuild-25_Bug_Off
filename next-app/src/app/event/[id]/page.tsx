@@ -1,9 +1,8 @@
-'use client'
+'use client';
 import React, { useState, useEffect } from 'react';
 import {
     ArrowLeft, Heart, Calendar, MapPin, Users, Clock, Star, Zap, Shield,
-    Share2, ChevronLeft, ChevronRight, Check, AlertCircle, Loader, Navigation,
-    CreditCard, Lock
+    Share2, ChevronLeft, ChevronRight, Check, AlertCircle, Loader, CreditCard, Lock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MapComponent from '@/components/MapComponent';
@@ -11,10 +10,9 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { eventApi, ticketApi, paymentApi, Event, TicketClass, Ticket } from '@/lib/api';
 
-// Razorpay types
 declare global {
     interface Window {
-        Razorpay: any;
+        Razorpay?: RazorpayConstructor;
     }
 }
 
@@ -22,6 +20,23 @@ interface RazorpayResponse {
     razorpay_payment_id: string;
     razorpay_order_id: string;
     razorpay_signature: string;
+}
+
+interface RazorpayOptions {
+    key: string;
+    amount: number;
+    currency: string;
+    name: string;
+    description: string;
+    order_id: string;
+    handler: (response: RazorpayResponse) => void;
+    prefill: { name?: string; email?: string };
+    theme?: { color?: string };
+    modal?: { ondismiss: () => void };
+}
+
+interface RazorpayConstructor {
+    new(options: RazorpayOptions): { open: () => void };
 }
 
 const EventDetailPage: React.FC = () => {
@@ -37,11 +52,11 @@ const EventDetailPage: React.FC = () => {
     const [ticketQuantity, setTicketQuantity] = useState(1);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [bookingState, setBookingState] = useState({
-        isBooking: false,
-        isPaying: false,
-        currentTicket: null as Ticket | null
-    });
+    const [bookingState, setBookingState] = useState<{
+        isBooking: boolean;
+        isPaying: boolean;
+        currentTicket: Ticket | null;
+    }>({ isBooking: false, isPaying: false, currentTicket: null });
     const [paymentStep, setPaymentStep] = useState<'select' | 'book' | 'pay' | 'success'>('select');
 
     // Load Razorpay script
@@ -50,29 +65,31 @@ const EventDetailPage: React.FC = () => {
         script.src = 'https://checkout.razorpay.com/v1/checkout.js';
         script.async = true;
         document.body.appendChild(script);
+
+        // Cleanup function
         return () => {
             document.body.removeChild(script);
         };
     }, []);
 
+
     // Fetch event data
     useEffect(() => {
         const fetchEvent = async () => {
             if (!eventId) return;
-            
+
             try {
                 setLoading(true);
                 setError(null);
-                const response = await eventApi.getEvent(eventId);
+                const response = await eventApi.getEvent(eventId); // properly typed
                 setEvent(response.event);
-                
-                // Set default ticket class
+
                 if (response.event.ticketClasses?.length > 0) {
                     setSelectedTicketClass(response.event.ticketClasses[0]);
                 }
-            } catch (err) {
+            } catch (err: unknown) {
                 console.error('Error fetching event:', err);
-                setError('Failed to load event details. Please try again.');
+                setError(err instanceof Error ? err.message : 'Failed to load event details');
             } finally {
                 setLoading(false);
             }
@@ -84,22 +101,12 @@ const EventDetailPage: React.FC = () => {
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         return {
-            date: date.toLocaleDateString('en-US', { 
-                weekday: 'long',
-                month: 'long', 
-                day: 'numeric', 
-                year: 'numeric' 
-            }),
-            time: date.toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
-                minute: '2-digit',
-                hour12: true 
-            })
+            date: date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+            time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
         };
     };
 
     const getTicketAvailability = (ticketClass: TicketClass) => {
-        // For demo, assume 70% are sold (you can add sold count to your backend)
         const sold = Math.floor(ticketClass.maxSupply * 0.7);
         return { sold, total: ticketClass.maxSupply };
     };
@@ -114,13 +121,12 @@ const EventDetailPage: React.FC = () => {
     const nextImage = () => {
         if (!event) return;
         const gallery = [event.image].filter(Boolean);
-        setCurrentImageIndex((prev) => prev === gallery.length - 1 ? 0 : prev + 1);
+        setCurrentImageIndex(prev => (prev === gallery.length - 1 ? 0 : prev + 1));
     };
-
     const prevImage = () => {
         if (!event) return;
         const gallery = [event.image].filter(Boolean);
-        setCurrentImageIndex((prev) => prev === 0 ? gallery.length - 1 : prev - 1);
+        setCurrentImageIndex(prev => (prev === 0 ? gallery.length - 1 : prev - 1));
     };
 
     const handleBookTicket = async () => {
@@ -135,16 +141,11 @@ const EventDetailPage: React.FC = () => {
                 ticketType: selectedTicketClass.type
             });
 
-            setBookingState(prev => ({ 
-                ...prev, 
-                currentTicket: response.ticket,
-                isBooking: false 
-            }));
+            setBookingState(prev => ({ ...prev, currentTicket: response.ticket, isBooking: false }));
             setPaymentStep('pay');
-
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error booking ticket:', err);
-            setError(err.message || 'Failed to book ticket. Please try again.');
+            setError(err instanceof Error ? err.message : 'Failed to book ticket');
             setBookingState(prev => ({ ...prev, isBooking: false }));
         }
     };
@@ -156,15 +157,17 @@ const EventDetailPage: React.FC = () => {
             setBookingState(prev => ({ ...prev, isPaying: true }));
             setError(null);
 
-            // Create Razorpay order
-            const totalAmount = selectedTicketClass.price * ticketQuantity * 100; // Convert to paise
+            const totalAmount = selectedTicketClass.price * ticketQuantity * 100;
             const orderResponse = await paymentApi.createOrder({
                 ticketId: bookingState.currentTicket._id,
-                amount: totalAmount
+                amount: totalAmount,
             });
 
-            const options = {
-                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+            const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+            if (!razorpayKey) throw new Error('Razorpay key is not defined');
+
+            const options: RazorpayOptions = {
+                key: razorpayKey,
                 amount: orderResponse.order.amount,
                 currency: orderResponse.order.currency,
                 name: 'Spectrate',
@@ -176,72 +179,43 @@ const EventDetailPage: React.FC = () => {
                             ticketId: bookingState.currentTicket!._id,
                             razorpayPaymentId: response.razorpay_payment_id,
                             razorpayOrderId: response.razorpay_order_id,
-                            razorpaySignature: response.razorpay_signature
+                            razorpaySignature: response.razorpay_signature,
                         });
-
                         setPaymentStep('success');
                         setBookingState(prev => ({ ...prev, isPaying: false }));
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                         console.error('Payment verification failed:', err);
-                        setError('Payment verification failed. Please contact support.');
+                        setError(err instanceof Error ? err.message : 'Payment verification failed');
                         setBookingState(prev => ({ ...prev, isPaying: false }));
                     }
                 },
-                prefill: {
-                    name: user?.username,
-                    email: user?.email,
-                },
-                theme: {
-                    color: '#E34B26'
-                },
-                modal: {
-                    ondismiss: () => {
-                        setBookingState(prev => ({ ...prev, isPaying: false }));
-                    }
-                }
+                prefill: { name: user?.username, email: user?.email },
+                theme: { color: '#E34B26' },
+                modal: { ondismiss: () => setBookingState(prev => ({ ...prev, isPaying: false })) },
             };
 
-            const razorpay = new window.Razorpay(options);
+            const Razorpay = window.Razorpay!;
+            const razorpay = new Razorpay(options);
             razorpay.open();
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error initiating payment:', err);
-            setError(err.message || 'Failed to initiate payment. Please try again.');
+            setError(err instanceof Error ? err.message : 'Failed to initiate payment');
             setBookingState(prev => ({ ...prev, isPaying: false }));
         }
     };
 
-    if (authLoading || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center" style={{
-                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
-            }}>
-                <div className="text-center">
-                    <Loader className="h-8 w-8 animate-spin text-[#003447] mx-auto mb-4" />
-                    <p className="text-[#003447] font-medium">Loading event details...</p>
-                </div>
-            </div>
-        );
-    }
+    if (authLoading || loading) return (
+        <div className="min-h-screen flex items-center justify-center">
+            <Loader className="h-8 w-8 animate-spin" />
+        </div>
+    );
 
-    if (error && !event) {
-        return (
-            <div className="min-h-screen flex items-center justify-center" style={{
-                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
-            }}>
-                <div className="text-center bg-white/30 backdrop-blur-md rounded-2xl p-8 border border-white/20">
-                    <AlertCircle className="h-12 w-12 text-[#E34B26] mx-auto mb-4" />
-                    <p className="text-[#E34B26] font-medium mb-4">{error}</p>
-                    <button 
-                        onClick={() => router.push('/events')} 
-                        className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-6 py-2 rounded-full font-semibold hover:scale-105 transition-all"
-                    >
-                        Back to Events
-                    </button>
-                </div>
-            </div>
-        );
-    }
+    if (error && !event) return (
+        <div className="min-h-screen flex items-center justify-center">
+            <p className="text-red-600">{error}</p>
+        </div>
+    );
 
     if (!event) return null;
 
@@ -289,7 +263,7 @@ const EventDetailPage: React.FC = () => {
                 <div className="max-w-7xl mx-auto">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
-                            <button 
+                            <button
                                 onClick={() => router.push('/events')}
                                 className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20"
                             >
@@ -380,7 +354,7 @@ const EventDetailPage: React.FC = () => {
                             <div className="space-y-6">
                                 <div>
                                     <h1 className="text-3xl md:text-4xl font-bold text-[#003447] mb-2 drop-shadow">{event.name}</h1>
-                                    
+
                                     <div className="flex flex-wrap gap-4 mb-6">
                                         <div className="flex items-center space-x-2">
                                             <Calendar className="h-5 w-5 text-[#E34B26]" />
@@ -470,7 +444,7 @@ const EventDetailPage: React.FC = () => {
                                                 {event.ticketClasses?.map((ticketClass) => {
                                                     const availability = getTicketAvailability(ticketClass);
                                                     const availabilityStatus = getAvailabilityStatus(availability.sold, availability.total);
-                                                    
+
                                                     return (
                                                         <div
                                                             key={ticketClass._id}

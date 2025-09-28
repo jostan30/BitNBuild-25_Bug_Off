@@ -1,16 +1,33 @@
 "use client";
 
+// At the very top of your page.tsx
+
+
 import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Loader, Shield, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type LoginMode = "User" | "Organizer";
 
-// Declare ReCaptcha for TypeScript
+// At the top of your page.tsx, inside declare global
 declare global {
   interface Window {
-    grecaptcha: any;
-    onRecaptchaLoad: () => void;
+    grecaptcha: {
+      render: (
+        element: HTMLElement | null,
+        options: {
+          sitekey: string;
+          theme?: "light" | "dark";
+          size?: "normal" | "compact";
+          callback?: (token: string) => void;
+        }
+      ) => number;
+      ready: (callback: () => void) => void;
+      execute?: (siteKey: string, options?: { action?: string }) => Promise<string>;
+      getResponse: (widgetId: number) => string;
+      reset?: (widgetId: number) => void;
+    };
+    onRecaptchaLoad?: () => void; // ✅ Add it directly here
   }
 }
 
@@ -18,7 +35,7 @@ declare global {
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL ;
 
 const authAPI = {
-  login: async (loginData: any) => {
+  login: async (loginData: unknown) => {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
@@ -36,7 +53,7 @@ const authAPI = {
     return result;
   },
 
-  socialLogin: async (socialData: any) => {
+  socialLogin: async (socialData: unknown) => {
     const response = await fetch(`${API_BASE_URL}/api/auth/social-login`, {
       method: 'POST',
       headers: {
@@ -99,7 +116,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (recaptchaLoaded && window.grecaptcha && recaptchaRef.current && recaptchaWidgetId.current === null) {
       try {
-        const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+        const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!;
         recaptchaWidgetId.current = window.grecaptcha.render(recaptchaRef.current, {
           sitekey: siteKey,
           theme: 'light',
@@ -127,7 +144,7 @@ export default function LoginPage() {
 
   const resetReCaptcha = () => {
     if (window.grecaptcha && recaptchaWidgetId.current !== null) {
-      window.grecaptcha.reset(recaptchaWidgetId.current);
+      window.grecaptcha.reset!(recaptchaWidgetId.current);
     }
   };
 
@@ -183,13 +200,19 @@ const handleSubmit = async (e: React.FormEvent) => {
       }
     }, 1000);
 
-  } catch (error: any) {
-    console.error('Login error:', error);
-    setError(error.message || 'Login failed. Please try again.');
-    resetReCaptcha();
-  } finally {
-    setIsLoading(false);
+  }catch (error: unknown) {
+  console.error('Login error:', error);
+
+  if (error instanceof Error) {
+    setError(error.message);
+  } else if (typeof error === 'string') {
+    setError(error);
+  } else {
+    setError('Login failed. Please try again.');
   }
+
+  resetReCaptcha();
+
 };
 
   const handleSocialLogin = async (provider: string) => {
@@ -224,14 +247,20 @@ const handleSubmit = async (e: React.FormEvent) => {
         // window.location.href = redirectUrl;
       }, 2000);
       
-    } catch (error: any) {
-      console.error('Social login error:', error);
-      setError(error.message || `${provider} login failed`);
-      resetReCaptcha();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+   } catch (error: unknown) {
+  console.error('Login error:', error);
+
+  if (error instanceof Error) {
+    setError(error.message || 'Login failed. Please try again.');
+  } else {
+    setError('Login failed. Please try again.');
+  }
+
+  resetReCaptcha();
+} finally {
+  setIsLoading(false);
+}
+
 
   return (
     <div
@@ -515,4 +544,6 @@ const handleSubmit = async (e: React.FormEvent) => {
       </div>
     </div>
   );
+}
+}
 }
