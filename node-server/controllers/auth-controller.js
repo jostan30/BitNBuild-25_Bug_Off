@@ -1,6 +1,7 @@
 import User from "../models/User.js"; 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { createAccount } from "../utils/blockchain.js";
 import fetch from "node-fetch"; // You'll need to install this: npm install node-fetch
 
 // Helper function to verify reCAPTCHA
@@ -63,11 +64,12 @@ export const register = async (req, res) => {
     const userRole = userType === 'organizer' || role === 'organizer' ? 'organizer' : 'user';
 
     // Create user
+    const {accountId, privateKey, publicKey} = await createAccount();
     const newUser = new User({ 
       username, 
       email, 
       password: hashedPassword, 
-      role: userRole 
+      role, walletId: accountId, privateKey: userRole 
     });
     
     await newUser.save();

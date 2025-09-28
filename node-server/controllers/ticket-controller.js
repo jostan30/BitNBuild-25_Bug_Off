@@ -2,7 +2,9 @@ import Ticket from "../models/Ticket.js";
 import TicketClass from "../models/TicketClass.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import dotenv from "dotenv";
 
+await dotenv.config();
 // Initialize Razorpay
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,

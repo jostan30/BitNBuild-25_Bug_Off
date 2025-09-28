@@ -5,7 +5,8 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ["user", "organizer", "admin"], default: "user" },
-  walletAddress: { type: String }, // blockchain account
+  walletId: { type: String },
+  privateKey: { type: String },
   captchaVerified: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });

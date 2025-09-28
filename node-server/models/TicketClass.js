@@ -5,7 +5,8 @@ const ticketClassSchema = new mongoose.Schema({
   type: { type: String, enum: ["Standard", "Premium", "VIP"], required: true },
   maxSupply: { type: Number, required: true },
   price: { type: Number, required: true },
-  tokenAddress: { type: String }, // NFT contract token address
+  tokenAddress: { type: String },
+  supplyKey: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 

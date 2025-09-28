@@ -2,12 +2,86 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import Payment from "../models/Payment.js";
 import Ticket from "../models/Ticket.js";
+import Event from "../models/Event.js";
+import { mintAndTransferNFT } from "../utils/blockchain.js";
+import dotenv from "dotenv";
 
+await dotenv.config();
 // Razorpay instance
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
+
+async function getTicketMetadata(ticketId) {
+  const result = await Ticket.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(ticketId) } },
+
+    // Join with TicketClass
+    {
+      $lookup: {
+        from: "ticketclasses",
+        localField: "ticketClassId",
+        foreignField: "_id",
+        as: "ticketClass"
+      }
+    },
+    { $unwind: "$ticketClass" },
+
+    // Join with Event
+    {
+      $lookup: {
+        from: "events",
+        localField: "ticketClass.eventId",
+        foreignField: "_id",
+        as: "event"
+      }
+    },
+    { $unwind: "$event" },
+
+    // Join with buyer (User)
+    {
+      $lookup: {
+        from: "users",
+        localField: "buyerId",
+        foreignField: "_id",
+        as: "buyer"
+      }
+    },
+    { $unwind: "$buyer" },
+
+    // Join with organiser (User)
+    {
+      $lookup: {
+        from: "users",
+        localField: "event.organiserId",
+        foreignField: "_id",
+        as: "organiser"
+      }
+    },
+    { $unwind: "$organiser" },
+
+    // Project only the fields needed for NFT metadata
+    {
+      $project: {
+        buyerId: "$buyer._id",
+        buyerUsername: "$buyer.username",
+        tokenAddress: "$ticketClass.tokenAddress",
+        organiserWalletId: "$organiser.walletId",
+        organiserPrivateKey: "$organiser.privateKey",
+        supplyKeyStr: "$ticketClass.supplyKey",
+        eventName: "$event.name",
+        eventStartTime: "$event.startTime",
+        eventEndTime: "$event.endTime",
+        ticketType: "$ticketClass.type",
+        serial: "$serial",
+        qrHash: "$qrHash"
+      }
+    }
+  ]);
+
+  return result[0]; // single ticket metadata
+}
 
 // Create order
 export const createOrder = async (req, res) => {
@@ -57,10 +131,30 @@ export const verifyPayment = async (req, res) => {
     );
 
     await Ticket.findByIdAndUpdate(ticketId, { status: "Active", paymentStatus: "Completed" });
+    
+    const details = await getTicketMetadata(ticketId);
+    if (!details) {
+      return res.status(404).json({ message: "Ticket details not found for NFT minting" });
+    }
 
-    // TODO: Mint NFT
-    // mintNFT(ticketId);
+    const metadata = Buffer.from(JSON.stringify({
+      event: details.eventName,
+      startTime: details.eventStartTime,
+      username: details.buyerUsername,
+    })).toString("hex");
 
+    const serialNumber = await mintAndTransferNFT(
+      details.tokenAddress,
+      [metadata],
+      details.buyerId.toString(),
+      details.organiserWalletId,
+      details.supplyKeyStr,
+      details.buyerPrivateKey,
+      details.organiserPrivateKey
+    );
+    console.log(`Minted NFT with serial number: ${serialNumber}`);
+    
+    await Ticket.findByIdAndUpdate(ticketId, { serial: parseInt(serialNumber) });
     res.status(200).json({ message: "Payment verified and NFT minted" });
   } catch (err) {
     console.error(err);
