@@ -1,5 +1,6 @@
 import Ticket from "../models/Ticket.js";
 import TicketClass from "../models/TicketClass.js";
+import Event from "../models/Event.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import dotenv from "dotenv";
@@ -17,10 +18,25 @@ export const bookTicket = async (req, res) => {
     const { eventId, ticketType } = req.body;
     const buyerId = req.user._id;
 
-    // Find ticket class
+    // Check if user already has a ticket for this event
     const ticketClass = await TicketClass.findOne({ eventId, type: ticketType });
     if (!ticketClass) return res.status(404).json({ message: "Ticket class not found" });
 
+    // Check if user already has an active/pending ticket for this event
+    const existingTicket = await Ticket.findOne({
+      ticketClassId: ticketClass._id,
+      buyerId,
+      status: { $in: ["Minted", "Active"] },
+      paymentStatus: { $in: ["Pending", "Completed"] }
+    });
+
+    if (existingTicket) {
+      return res.status(400).json({ 
+        message: "You already have a ticket for this event", 
+        ticket: existingTicket 
+      });
+    }
+    
     // Create ticket with purchase slot
     const ticket = await Ticket.create({
       ticketClassId: ticketClass._id,
@@ -36,7 +52,7 @@ export const bookTicket = async (req, res) => {
   }
 };
 
-// Purchase ticket: Razorpay payment + NFT mint
+// Razorpay payment + NFT mint
 export const purchaseTicket = async (req, res) => {
   try {
     const { ticketId } = req.body;
@@ -48,7 +64,7 @@ export const purchaseTicket = async (req, res) => {
     }
 
     // Create Razorpay order
-    const amount = 100 * 100; // Example: 100 INR in paise, replace with actual ticket price
+    const amount = 100 * 100; 
     const order = await razorpay.orders.create({
       amount,
       currency: "INR",
@@ -66,7 +82,7 @@ export const purchaseTicket = async (req, res) => {
   }
 };
 
-// Verify Razorpay payment and mint NFT
+//  Razorpay payment and mint NFT
 export const verifyPayment = async (req, res) => {
   try {
     const { razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
@@ -93,6 +109,55 @@ export const verifyPayment = async (req, res) => {
     // mintNFT(ticket);
 
     res.status(200).json({ message: "Payment verified and NFT minted", ticket });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error", error });
+  }
+};
+
+// Get user's tickets
+export const getUserTickets = async (req, res) => {
+  try {
+    const buyerId = req.user._id;
+    const { status, page = 1, limit = 10 } = req.query;
+
+    // Build filter
+    const filter = { buyerId };
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Fetch tickets with populated data
+    const tickets = await Ticket.find(filter)
+      .populate({
+        path: 'ticketClassId',
+        populate: {
+          path: 'eventId',
+          model: 'Event'
+        }
+      })
+      .populate('buyerId', 'username email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalTickets = await Ticket.countDocuments(filter);
+    const totalPages = Math.ceil(totalTickets / parseInt(limit));
+
+    res.status(200).json({
+      tickets,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalTickets,
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error", error });

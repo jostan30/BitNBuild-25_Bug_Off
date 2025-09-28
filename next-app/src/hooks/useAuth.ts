@@ -3,28 +3,53 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface User {
-  id: string;
+  _id: string;
   username: string;
   email: string;
-  role: string;
+  role: 'user' | 'organizer' | 'admin';
+  walletId?: string;
+  walletAddress?: string;
+  captchaVerified: boolean;
+  createdAt: string;
+  lastLogin?: string;
 }
 
 export const useAuth = (requiredRole?: 'user' | 'organizer') => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  const logout = () => {
+    // Clear all auth data
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('authToken');
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('userType');
+    }
+    setUser(null);
+    setError(null);
+  };
 
   useEffect(() => {
     const verifyToken = async () => {
-      const token = sessionStorage.getItem('authToken');
-      const storedUser = sessionStorage.getItem('user');
-
-      if (!token || !storedUser) {
-        router.push('/login'); // redirect if no token
+      // Skip verification in non-browser environments
+      if (typeof window === 'undefined') {
+        setLoading(false);
         return;
       }
 
       try {
+        const token = sessionStorage.getItem('authToken');
+        const storedUser = sessionStorage.getItem('user');
+        
+        if (!token || !storedUser) {
+          setError('No authentication found');
+          router.push('/auth/login');
+          return;
+        }
+
+        // Verify token with backend
         const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/verify-token`, {
           method: 'GET',
           headers: {
@@ -34,30 +59,31 @@ export const useAuth = (requiredRole?: 'user' | 'organizer') => {
         });
 
         const data = await res.json();
-
+        
         if (!res.ok || !data.valid) {
-          sessionStorage.removeItem('authToken');
-          sessionStorage.removeItem('user');
-          sessionStorage.removeItem('userType');
-          router.push('/login'); // token invalid, redirect
+          logout();
+          setError('Authentication expired');
+          router.push('/auth/login');
           return;
         }
 
         const parsedUser: User = JSON.parse(storedUser);
-
-        // Optional role check
+        
+        // Role-based access control
         if (requiredRole && parsedUser.role !== requiredRole) {
-          router.push('/unauthorized'); // redirect if role mismatch
+          setError('Insufficient permissions');
+          router.push('/unauthorized');
           return;
         }
 
         setUser(parsedUser);
+        setError(null);
+        
       } catch (err) {
         console.error('Token verification failed:', err);
-        sessionStorage.removeItem('authToken');
-        sessionStorage.removeItem('user');
-        sessionStorage.removeItem('userType');
-        router.push('/login');
+        logout();
+        setError('Authentication failed');
+        router.push('/auth/login');
       } finally {
         setLoading(false);
       }
@@ -66,5 +92,10 @@ export const useAuth = (requiredRole?: 'user' | 'organizer') => {
     verifyToken();
   }, [router, requiredRole]);
 
-  return { user, loading };
+  return { 
+    user, 
+    loading, 
+    error, 
+    logout 
+  };
 };

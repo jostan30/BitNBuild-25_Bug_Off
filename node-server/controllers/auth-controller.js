@@ -226,6 +226,83 @@ export const verifyToken = async (req, res) => {
   }
 };
 
+// Add these to your auth controller
+
+// GET PROFILE
+export const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    res.status(200).json({ 
+      user: {
+        id: user._id,
+        _id: user._id, // Include both for compatibility
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        bio: user.bio,
+        walletId: user.walletId,
+        walletAddress: user.walletAddress,
+        captchaVerified: user.captchaVerified || false,
+        isActive: user.isActive !== false,
+        isEmailVerified: user.isEmailVerified || false,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// UPDATE PROFILE
+export const updateProfile = async (req, res) => {
+  try {
+    const { username, phone, bio, profileImage } = req.body;
+    const updates = {};
+    
+    if (username) updates.username = username;
+    if (phone !== undefined) updates.phone = phone;
+    if (bio !== undefined) updates.bio = bio;
+    if (profileImage !== undefined) updates.profileImage = profileImage;
+    
+    const user = await User.findByIdAndUpdate(
+      req.user.id, 
+      updates, 
+      { new: true, select: '-password' }
+    );
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    res.status(200).json({ 
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        bio: user.bio,
+        walletId: user.walletId,
+        walletAddress: user.walletAddress,
+        captchaVerified: user.captchaVerified || false,
+        isActive: user.isActive !== false,
+        isEmailVerified: user.isEmailVerified || false,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
 
 
 // Signup (/auth/signup)

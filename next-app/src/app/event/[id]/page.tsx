@@ -264,7 +264,7 @@ const EventDetailPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
                             <button
-                                onClick={() => router.push('/events')}
+                                onClick={() => router.push('/event')}
                                 className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20"
                             >
                                 <ArrowLeft className="h-6 w-6 text-[#003447]" />
