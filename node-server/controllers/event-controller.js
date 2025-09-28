@@ -1,5 +1,5 @@
-import  Event  from "../models/Event.js";
-import  TicketClass  from "../models/TicketClass.js";
+import Event from "../models/Event.js";
+import TicketClass from "../models/TicketClass.js";
 
 // Create Event + Ticket Classes (Organizer Only)
 export const createEvent = async (req, res) => {
@@ -58,8 +58,18 @@ export const updateEvent = async (req, res) => {
     const event = await Event.findById(id);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
+    // Debug logging
+    console.log("Update - Event organiserId:", event.organiserId.toString());
+    console.log("Update - Request user id:", req.user.id);
+
     if (event.organiserId.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Unauthorized" });
+      return res.status(403).json({ 
+        message: "Unauthorized - You can only update your own events",
+        debug: process.env.NODE_ENV === 'development' ? {
+          eventOrganizerId: event.organiserId.toString(),
+          requestUserId: req.user.id
+        } : undefined
+      });
     }
 
     // Update fields
@@ -80,29 +90,68 @@ export const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
     const event = await Event.findById(id);
-    if (!event) return res.status(404).json({ message: "Event not found" });
-
-    if (event.organiserId.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Unauthorized" });
+    
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
     }
 
-    await TicketClass.deleteMany({ eventId: event._id }); // Delete related ticket classes
+    // Debug logging
+    console.log("Delete - Event organiserId:", event.organiserId);
+    console.log("Delete - Event organiserId type:", typeof event.organiserId);
+    console.log("Delete - Event organiserId toString:", event.organiserId.toString());
+    console.log("Delete - Request user:", req.user);
+    console.log("Delete - Request user id:", req.user.id);
+    console.log("Delete - Request user id type:", typeof req.user.id);
+    console.log("Delete - Are they equal?", event.organiserId.toString() === req.user.id);
+
+    if (event.organiserId.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: "Unauthorized - You can only delete your own events",
+        debug: process.env.NODE_ENV === 'development' ? {
+          eventOrganizerId: event.organiserId.toString(),
+          requestUserId: req.user.id,
+          equal: event.organiserId.toString() === req.user.id
+        } : undefined
+      });
+    }
+
+    await TicketClass.deleteMany({ eventId: event._id });
     await event.deleteOne();
 
     res.json({ message: "Event deleted successfully" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete event error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-// List All Events (Public)
+// List All Events (Public) - but organizer gets only their events
 export const listEvents = async (req, res) => {
   try {
-    const events = await Event.find().populate("ticketClasses");
+    let query = {};
+    
+    // If user is authenticated and is an organizer, only show their events
+    if (req.headers.authorization) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const jwt = await import('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        if (decoded.role === 'organizer') {
+          query = { organiserId: decoded.id };
+          console.log("Filtering events for organizer:", decoded.id);
+        }
+      } catch (authError) {
+        // If token is invalid, just return public events (empty query)
+        console.log("Token invalid or missing, showing all events");
+      }
+    }
+    
+    const events = await Event.find(query).populate("ticketClasses");
+    console.log(`Found ${events.length} events with query:`, query);
     res.json({ events });
   } catch (err) {
-    console.error(err);
+    console.error("List events error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -121,45 +170,21 @@ export const getEventDetails = async (req, res) => {
   }
 };
 
-
-
-// curl -X POST http://localhost:5000/api/events/create \
-// -H "Content-Type: application/json" \
-// -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4ZDg0YTlmODQxNmY3ODU4ODQ3NTEyMCIsInJvbGUiOiJvcmdhbml6ZXIiLCJpYXQiOjE3NTkwMDUzNTEsImV4cCI6MTc1OTA5MTc1MX0.wJjUNHubjUky6OHLfF91XDMKB5wC9uAoeSnk7aeco9M" \
-// -d '{
-//   "name": "Music Fest 2025",
-//   "description": "Annual music festival with live bands",
-//   "location": "City Park",
-//   "startTime": "2025-12-15T10:00:00Z",
-//   "endTime": "2025-12-15T22:00:00Z",
-//   "ticketExpiryHours": 4,
-//   "category": "Music",
-//   "image": "https://example.com/event-image.jpg",
-//   "ticketClasses": [
-//     { "type": "Standard", "maxSupply": 500, "price": 50 },
-//     { "type": "VIP", "maxSupply": 100, "price": 150 }
-//   ]
-// }'
-
-
-// Update Event
-// curl -X PUT http://localhost:5000/api/events/68d84c53ea2ed0fb1eb25899 \
-// -H "Content-Type: application/json" \
-// -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4ZDg0YTlmODQxNmY3ODU4ODQ3NTEyMCIsInJvbGUiOiJvcmdhbml6ZXIiLCJpYXQiOjE3NTkwMDUzNTEsImV4cCI6MTc1OTA5MTc1MX0.wJjUNHubjUky6OHLfF91XDMKB5wC9uAoeSnk7aeco9M" \
-// -d '{
-//   "description": "Updated description: added keynote speakers",
-//   "location": "Main Hall, Convention Center"
-// }'
-
-
-// 2️⃣ Get Event Details (Public)
-// curl -X GET http://localhost:5000/api/events/68d84c53ea2ed0fb1eb25899
-
-
-// 3️⃣ List All Events (Public)
-// curl -X GET http://localhost:5000/api/events
-
-
-// 4️⃣ Delete Event (Organizer Only)
-// curl -X DELETE http://localhost:5000/api/events/68d84c53ea2ed0fb1eb25899 \
-// -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4ZDg0YTlmODQxNmY3ODU4ODQ3
+export const getMyEvents = async (req, res) => {
+  try {
+    console.log("Getting events for organizer:", req.user.id);
+    
+    const events = await Event.find({ organiserId: req.user.id }).populate("ticketClasses");
+    
+    console.log(`Found ${events.length} events for organizer ${req.user.id}`);
+    
+    res.json({ 
+      events,
+      message: `Found ${events.length} events`,
+      organizerId: req.user.id 
+    });
+  } catch (err) {
+    console.error("Get my events error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};

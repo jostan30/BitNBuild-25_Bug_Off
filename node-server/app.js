@@ -1,15 +1,23 @@
 import 'dotenv/config'; 
 import express from "express";
 import rateLimit from "express-rate-limit";
+import cors from "cors"; // <-- import cors
 import connectDB from "./utils/db.js";
 
 import authRoutes from  "./routers/auth-router.js";
 import eventRoutes from "./routers/event-router.js";
 import ticketRoutes from "./routers/ticket-router.js";
-import paymentRoutes from "./routers/payment-router.js"; // <-- Add payment router
+import paymentRoutes from "./routers/payment-router.js"; 
 
 const app = express();
 app.use(express.json()); // Parse JSON bodies
+
+// Enable CORS
+app.use(cors({
+  origin: process.env.FRONTEND_URL, // e.g., "http://localhost:3000"
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 
 const PORT = process.env.PORT || 5000;
 
@@ -24,16 +32,16 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// Health check / test API
+// Health check
 app.get("/", (req, res) => {
   res.send({ message: "Server is running!" });
 });
 
-// Custom APIs
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/tickets', ticketRoutes);
-app.use('/api/payments', paymentRoutes); // <-- Mount payment routes
+app.use('/api/payments', paymentRoutes); 
 
 connectDB()
   .then(() => {
