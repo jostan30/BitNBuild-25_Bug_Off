@@ -2,101 +2,254 @@
 import React, { useState, useEffect } from 'react';
 import {
     ArrowLeft, Heart, Calendar, MapPin, Users, Clock, Star, Zap, Shield,
-    Share2, ChevronLeft, ChevronRight, Check, AlertCircle, Loader, Navigation
+    Share2, ChevronLeft, ChevronRight, Check, AlertCircle, Loader, Navigation,
+    CreditCard, Lock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MapComponent from '@/components/MapComponent';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { eventApi, ticketApi, paymentApi, Event, TicketClass, Ticket } from '@/lib/api';
+
+// Razorpay types
+declare global {
+    interface Window {
+        Razorpay: any;
+    }
+}
+
+interface RazorpayResponse {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+}
 
 const EventDetailPage: React.FC = () => {
-    const router =useRouter();
+    const router = useRouter();
+    const params = useParams();
+    const { user, loading: authLoading } = useAuth('user');
+    const eventId = params?.id as string;
+
+    const [event, setEvent] = useState<Event | null>(null);
     const [isLiked, setIsLiked] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const [mintingState, setMintingState] = useState({
-        isLoading: false,
-        selectedEventId: null as number | null
-    });
+    const [selectedTicketClass, setSelectedTicketClass] = useState<TicketClass | null>(null);
     const [ticketQuantity, setTicketQuantity] = useState(1);
-    const [mapLoaded, setMapLoaded] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [bookingState, setBookingState] = useState({
+        isBooking: false,
+        isPaying: false,
+        currentTicket: null as Ticket | null
+    });
+    const [paymentStep, setPaymentStep] = useState<'select' | 'book' | 'pay' | 'success'>('select');
 
-    // Mock event data
-    const event = {
-        id: 1,
-        name: "Cosmic Dreams Festival",
-        artist: "Multiple Artists",
-        date: "Dec 15, 2024",
-        time: "8:00 PM",
-        venue: "MetaVerse Arena",
-        location: "Los Angeles, CA",
-        coordinates: { lat: 34.0522, lng: -118.2437 },
-        image: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=600&fit=crop",
-        price: 0.15,
-        category: "Music",
-        capacity: 50000,
-        sold: 35000,
-        rarity: "Legendary",
-        chainFee: 0.001,
-        description: "Join us for the most spectacular music festival of the year featuring top artists from around the globe. Experience three days of non-stop music, incredible food, and unforgettable memories under the stars. This legendary event brings together the best electronic, pop, and indie artists for an immersive audio-visual experience.",
-        highlights: ["3 Main Stages", "50+ Artists", "VIP Experiences", "Food & Drinks", "Camping Available", "Art Installations"],
-        gallery: [
-            "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=600&fit=crop",
-            "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&h=600&fit=crop",
-            "https://images.unsplash.com/photo-1571266028243-d220c0fe3327?w=800&h=600&fit=crop",
-            "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800&h=600&fit=crop"
-        ]
+    // Load Razorpay script
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        document.body.appendChild(script);
+        return () => {
+            document.body.removeChild(script);
+        };
+    }, []);
+
+    // Fetch event data
+    useEffect(() => {
+        const fetchEvent = async () => {
+            if (!eventId) return;
+            
+            try {
+                setLoading(true);
+                setError(null);
+                const response = await eventApi.getEvent(eventId);
+                setEvent(response.event);
+                
+                // Set default ticket class
+                if (response.event.ticketClasses?.length > 0) {
+                    setSelectedTicketClass(response.event.ticketClasses[0]);
+                }
+            } catch (err) {
+                console.error('Error fetching event:', err);
+                setError('Failed to load event details. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchEvent();
+    }, [eventId]);
+
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        return {
+            date: date.toLocaleDateString('en-US', { 
+                weekday: 'long',
+                month: 'long', 
+                day: 'numeric', 
+                year: 'numeric' 
+            }),
+            time: date.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+            })
+        };
     };
 
-    const getRarityColor = (rarity: string): string => {
-        switch (rarity) {
-            case 'Common': return 'bg-gray-500/80 text-white';
-            case 'Rare': return 'bg-blue-500/80 text-white';
-            case 'Epic': return 'bg-purple-500/80 text-white';
-            case 'Legendary': return 'bg-gradient-to-r from-yellow-500/80 to-orange-500/80 text-white';
-            case 'Ultra Rare': return 'bg-gradient-to-r from-pink-500/80 to-purple-500/80 text-white';
-            default: return 'bg-gray-500/80 text-white';
-        }
+    const getTicketAvailability = (ticketClass: TicketClass) => {
+        // For demo, assume 70% are sold (you can add sold count to your backend)
+        const sold = Math.floor(ticketClass.maxSupply * 0.7);
+        return { sold, total: ticketClass.maxSupply };
     };
 
-    const getAvailabilityStatus = (sold: number, capacity: number) => {
-        const percentage = (sold / capacity) * 100;
+    const getAvailabilityStatus = (sold: number, total: number) => {
+        const percentage = (sold / total) * 100;
         if (percentage >= 95) return { status: 'Almost Sold Out', color: 'text-[#E34B26]' };
         if (percentage >= 75) return { status: 'Selling Fast', color: 'text-orange-500' };
         return { status: 'Available', color: 'text-green-500' };
     };
 
-    const mintTicket = async (): Promise<void> => {
-        setMintingState({
-            isLoading: true,
-            selectedEventId: event.id
-        });
-
-        // Simulate blockchain transaction
-        setTimeout(() => {
-            setMintingState({
-                isLoading: false,
-                selectedEventId: null
-            });
-            alert(`Successfully minted ${ticketQuantity} NFT ticket(s) for ${event.name}! Total gas fee: ${(event.chainFee * ticketQuantity).toFixed(4)} ETH`);
-        }, 3000);
-    };
-
     const nextImage = () => {
-        setCurrentImageIndex((prev) =>
-            prev === event.gallery.length - 1 ? 0 : prev + 1
-        );
+        if (!event) return;
+        const gallery = [event.image].filter(Boolean);
+        setCurrentImageIndex((prev) => prev === gallery.length - 1 ? 0 : prev + 1);
     };
 
     const prevImage = () => {
-        setCurrentImageIndex((prev) =>
-            prev === 0 ? event.gallery.length - 1 : prev - 1
-        );
+        if (!event) return;
+        const gallery = [event.image].filter(Boolean);
+        setCurrentImageIndex((prev) => prev === 0 ? gallery.length - 1 : prev - 1);
     };
 
-    const availability = getAvailabilityStatus(event.sold, event.capacity);
-    const totalPrice = (event.price * ticketQuantity).toFixed(3);
-    const totalGasFee = (event.chainFee * ticketQuantity).toFixed(4);
-    const isCurrentlyMinting = mintingState.isLoading && mintingState.selectedEventId === event.id;
+    const handleBookTicket = async () => {
+        if (!selectedTicketClass || !user) return;
 
+        try {
+            setBookingState(prev => ({ ...prev, isBooking: true }));
+            setError(null);
+
+            const response = await ticketApi.bookTicket({
+                eventId: eventId,
+                ticketType: selectedTicketClass.type
+            });
+
+            setBookingState(prev => ({ 
+                ...prev, 
+                currentTicket: response.ticket,
+                isBooking: false 
+            }));
+            setPaymentStep('pay');
+
+        } catch (err: any) {
+            console.error('Error booking ticket:', err);
+            setError(err.message || 'Failed to book ticket. Please try again.');
+            setBookingState(prev => ({ ...prev, isBooking: false }));
+        }
+    };
+
+    const handlePayment = async () => {
+        if (!bookingState.currentTicket || !selectedTicketClass) return;
+
+        try {
+            setBookingState(prev => ({ ...prev, isPaying: true }));
+            setError(null);
+
+            // Create Razorpay order
+            const totalAmount = selectedTicketClass.price * ticketQuantity * 100; // Convert to paise
+            const orderResponse = await paymentApi.createOrder({
+                ticketId: bookingState.currentTicket._id,
+                amount: totalAmount
+            });
+
+            const options = {
+                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+                amount: orderResponse.order.amount,
+                currency: orderResponse.order.currency,
+                name: 'Spectrate',
+                description: `${event?.name} - ${selectedTicketClass.type} Ticket`,
+                order_id: orderResponse.order.id,
+                handler: async (response: RazorpayResponse) => {
+                    try {
+                        await ticketApi.verifyPayment({
+                            ticketId: bookingState.currentTicket!._id,
+                            razorpayPaymentId: response.razorpay_payment_id,
+                            razorpayOrderId: response.razorpay_order_id,
+                            razorpaySignature: response.razorpay_signature
+                        });
+
+                        setPaymentStep('success');
+                        setBookingState(prev => ({ ...prev, isPaying: false }));
+                    } catch (err: any) {
+                        console.error('Payment verification failed:', err);
+                        setError('Payment verification failed. Please contact support.');
+                        setBookingState(prev => ({ ...prev, isPaying: false }));
+                    }
+                },
+                prefill: {
+                    name: user?.username,
+                    email: user?.email,
+                },
+                theme: {
+                    color: '#E34B26'
+                },
+                modal: {
+                    ondismiss: () => {
+                        setBookingState(prev => ({ ...prev, isPaying: false }));
+                    }
+                }
+            };
+
+            const razorpay = new window.Razorpay(options);
+            razorpay.open();
+
+        } catch (err: any) {
+            console.error('Error initiating payment:', err);
+            setError(err.message || 'Failed to initiate payment. Please try again.');
+            setBookingState(prev => ({ ...prev, isPaying: false }));
+        }
+    };
+
+    if (authLoading || loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{
+                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
+            }}>
+                <div className="text-center">
+                    <Loader className="h-8 w-8 animate-spin text-[#003447] mx-auto mb-4" />
+                    <p className="text-[#003447] font-medium">Loading event details...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error && !event) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{
+                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
+            }}>
+                <div className="text-center bg-white/30 backdrop-blur-md rounded-2xl p-8 border border-white/20">
+                    <AlertCircle className="h-12 w-12 text-[#E34B26] mx-auto mb-4" />
+                    <p className="text-[#E34B26] font-medium mb-4">{error}</p>
+                    <button 
+                        onClick={() => router.push('/events')} 
+                        className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-6 py-2 rounded-full font-semibold hover:scale-105 transition-all"
+                    >
+                        Back to Events
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (!event) return null;
+
+    const { date, time } = formatDate(event.startTime);
+    const availability = selectedTicketClass ? getTicketAvailability(selectedTicketClass) : { sold: 0, total: 0 };
+    const availabilityStatus = getAvailabilityStatus(availability.sold, availability.total);
+    const totalPrice = selectedTicketClass ? (selectedTicketClass.price * ticketQuantity).toFixed(2) : '0';
+    const gallery = [event.image].filter(Boolean);
 
     return (
         <div
@@ -105,7 +258,7 @@ const EventDetailPage: React.FC = () => {
                 background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
             }}
         >
-            {/* Abstract SVG background patterns - same as login */}
+            {/* Abstract SVG background patterns */}
             <svg
                 className="absolute inset-0 w-full h-full pointer-events-none z-0"
                 viewBox="0 0 1440 810"
@@ -137,8 +290,9 @@ const EventDetailPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
                             <button 
-                            onClick={()=>router.push('/event')}
-                            className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20">
+                                onClick={() => router.push('/events')}
+                                className="p-2 hover:bg-white/20 rounded-full transition-colors bg-white/10 backdrop-blur-sm border border-white/20"
+                            >
                                 <ArrowLeft className="h-6 w-6 text-[#003447]" />
                             </button>
                             <div className="flex items-center gap-3">
@@ -184,13 +338,13 @@ const EventDetailPage: React.FC = () => {
                         <div className="bg-white/30 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg overflow-hidden">
                             <div className="relative h-64 md:h-96">
                                 <img
-                                    src={event.gallery[currentImageIndex]}
+                                    src={gallery[currentImageIndex] || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=600&fit=crop'}
                                     alt={`${event.name} - Image ${currentImageIndex + 1}`}
                                     className="w-full h-full object-cover"
                                 />
 
                                 {/* Gallery Navigation */}
-                                {event.gallery.length > 1 && (
+                                {gallery.length > 1 && (
                                     <>
                                         <button
                                             onClick={prevImage}
@@ -209,34 +363,16 @@ const EventDetailPage: React.FC = () => {
 
                                 {/* Image Counter */}
                                 <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm">
-                                    {currentImageIndex + 1} / {event.gallery.length}
+                                    {currentImageIndex + 1} / {gallery.length}
                                 </div>
 
-                                {/* Rarity Badge */}
+                                {/* Category Badge */}
                                 <div className="absolute top-4 left-4">
-                                    <span className={cn("px-3 py-1 rounded-full text-sm font-semibold backdrop-blur-sm", getRarityColor(event.rarity))}>
-                                        {event.rarity}
+                                    <span className="bg-white/80 backdrop-blur-sm text-[#003447] px-3 py-1 rounded-full text-sm font-semibold">
+                                        {event.category}
                                     </span>
                                 </div>
                             </div>
-
-                            {/* Thumbnail Gallery */}
-                            {event.gallery.length > 1 && (
-                                <div className="flex space-x-2 p-4 overflow-x-auto bg-gradient-to-r from-[#F4FFEE]/50 to-[#CDBBB9]/50">
-                                    {event.gallery.map((image, index) => (
-                                        <button
-                                            key={index}
-                                            onClick={() => setCurrentImageIndex(index)}
-                                            className={cn(
-                                                "relative flex-shrink-0 w-16 md:w-20 h-12 md:h-16 rounded-lg overflow-hidden border-2 transition-all",
-                                                currentImageIndex === index ? 'border-[#E34B26] scale-105' : 'border-white/50 hover:border-[#49747F]'
-                                            )}
-                                        >
-                                            <img src={image} alt={`Thumbnail ${index + 1}`} className="w-full h-full object-cover" />
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                         </div>
 
                         {/* Event Info */}
@@ -244,21 +380,21 @@ const EventDetailPage: React.FC = () => {
                             <div className="space-y-6">
                                 <div>
                                     <h1 className="text-3xl md:text-4xl font-bold text-[#003447] mb-2 drop-shadow">{event.name}</h1>
-                                    <p className="text-xl text-[#441111] mb-4">{event.artist}</p>
-
+                                    
                                     <div className="flex flex-wrap gap-4 mb-6">
                                         <div className="flex items-center space-x-2">
                                             <Calendar className="h-5 w-5 text-[#E34B26]" />
-                                            <span className="text-[#003447] font-medium">{event.date} • {event.time}</span>
+                                            <span className="text-[#003447] font-medium">{date} • {time}</span>
                                         </div>
                                         <div className="flex items-center space-x-2">
                                             <MapPin className="h-5 w-5 text-[#49747F]" />
-                                            <span className="text-[#003447] font-medium">{event.venue}, {event.location}</span>
+                                            <span className="text-[#003447] font-medium">{event.location || 'Location TBA'}</span>
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                            <Users className="h-5 w-5 text-[#E34B26]" />
-                                            <span className="text-[#003447] font-medium">{event.sold.toLocaleString()} / {event.capacity.toLocaleString()}</span>
-                                            <span className={cn("font-semibold", availability.color)}>• {availability.status}</span>
+                                            <Clock className="h-5 w-5 text-[#E34B26]" />
+                                            <span className="text-[#003447] font-medium">
+                                                {event.ticketExpiryHours}h ticket validity
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -266,157 +402,243 @@ const EventDetailPage: React.FC = () => {
                                 {/* Description */}
                                 <div>
                                     <h2 className="text-2xl font-bold text-[#003447] mb-4">About This Event</h2>
-                                    <p className="text-[#441111] leading-relaxed">{event.description}</p>
-                                </div>
-
-                                {/* Highlights */}
-                                <div>
-                                    <h2 className="text-2xl font-bold text-[#003447] mb-4">Event Highlights</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {event.highlights.map((highlight, index) => (
-                                            <div key={index} className="flex items-center space-x-2">
-                                                <Check className="h-4 w-4 text-[#E34B26] flex-shrink-0" />
-                                                <span className="text-[#003447] font-medium">{highlight}</span>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <p className="text-[#441111] leading-relaxed">
+                                        {event.description || 'Join us for this amazing event! More details will be updated soon.'}
+                                    </p>
                                 </div>
                             </div>
                         </div>
 
                         {/* Map Section */}
-                        <MapComponent
-                            lat={event.coordinates.lat}
-                            lng={event.coordinates.lng}
-                            venue={event.venue}
-                            location={event.location}
-                            name={event.name}
-                        />
+                        {event.location && (
+                            <MapComponent
+                                lat={34.0522} // Default to LA coords - you can add coordinates to your event model
+                                lng={-118.2437}
+                                venue={event.location}
+                                location={event.location}
+                                name={event.name}
+                            />
+                        )}
                     </div>
 
                     {/* Right Column - Booking Card */}
                     <div className="lg:col-span-1">
                         <div className="sticky top-8">
                             <div className="bg-white/30 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg p-6">
-                                <div className="mb-6">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-3xl font-bold text-[#E34B26]">{event.price} ETH</span>
-                                        <span className="text-sm text-[#49747F]">+ {event.chainFee} gas</span>
-                                    </div>
-                                    <p className="text-sm text-[#441111]">Per NFT Ticket</p>
-                                </div>
-
-                                {/* Quantity Selector */}
-                                <div className="mb-6">
-                                    <label className="block text-sm font-medium text-[#003447] mb-2">
-                                        Quantity
-                                    </label>
-                                    <div className="flex items-center space-x-3">
-                                        <button
-                                            onClick={() => setTicketQuantity(Math.max(1, ticketQuantity - 1))}
-                                            className="w-10 h-10 rounded-full bg-white/50 border border-white/30 flex items-center justify-center hover:bg-white/70 transition-all text-[#003447] font-semibold"
-                                        >
-                                            -
-                                        </button>
-                                        <span className="text-xl font-semibold w-8 text-center text-[#003447]">{ticketQuantity}</span>
-                                        <button
-                                            onClick={() => setTicketQuantity(Math.min(10, ticketQuantity + 1))}
-                                            className="w-10 h-10 rounded-full bg-white/50 border border-white/30 flex items-center justify-center hover:bg-white/70 transition-all text-[#003447] font-semibold"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-[#49747F] mt-1">Maximum 10 tickets per transaction</p>
-                                </div>
-
-                                {/* Progress Bar */}
-                                <div className="mb-6">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm font-medium text-[#003447]">Availability</span>
-                                        <span className="text-sm text-[#441111]">
-                                            {((event.capacity - event.sold) / 1000).toFixed(0)}k left
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-white/50 rounded-full h-3">
-                                        <div
-                                            className="bg-gradient-to-r from-[#E34B26] to-[#49747F] h-3 rounded-full transition-all duration-300"
-                                            style={{ width: `${(event.sold / event.capacity) * 100}%` }}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Price Breakdown */}
-                                <div className="mb-6 p-4 bg-white/40 backdrop-blur-sm rounded-xl border border-white/30">
-                                    <h3 className="font-semibold text-[#003447] mb-3">Price Breakdown</h3>
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between">
-                                            <span className="text-[#441111]">{ticketQuantity} × NFT Ticket</span>
-                                            <span className="font-medium text-[#003447]">{totalPrice} ETH</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-[#441111]">Gas Fees</span>
-                                            <span className="font-medium text-[#003447]">{totalGasFee} ETH</span>
-                                        </div>
-                                        <hr className="border-white/30" />
-                                        <div className="flex justify-between font-bold text-lg">
-                                            <span className="text-[#003447]">Total</span>
-                                            <span className="text-[#E34B26]">{(parseFloat(totalPrice) + parseFloat(totalGasFee)).toFixed(4)} ETH</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Security Benefits */}
-                                <div className="mb-6 p-4 bg-gradient-to-br from-[#F4FFEE]/50 to-[#CDBBB9]/50 rounded-xl border border-white/30">
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <Shield className="h-5 w-5 text-[#49747F]" />
-                                        <span className="font-semibold text-[#003447]">Spectrate Secured</span>
-                                    </div>
-                                    <ul className="text-sm text-[#441111] space-y-1">
-                                        <li>• Instant minting (no waiting)</li>
-                                        <li>• Ultra-low gas fees</li>
-                                        <li>• Environmentally friendly</li>
-                                    </ul>
-                                </div>
-
-                                {/* Warning */}
-                                {availability.status === 'Almost Sold Out' && (
-                                    <div className="mb-6 p-4 bg-gradient-to-br from-red-100/50 to-orange-100/50 rounded-xl border border-red-200/50">
+                                {/* Error Display */}
+                                {error && (
+                                    <div className="mb-4 p-3 bg-red-100/50 border border-red-200/50 rounded-lg">
                                         <div className="flex items-center space-x-2">
-                                            <AlertCircle className="h-5 w-5 text-[#E34B26]" />
-                                            <span className="font-semibold text-[#E34B26]">Almost Sold Out!</span>
+                                            <AlertCircle className="h-4 w-4 text-red-600" />
+                                            <p className="text-sm text-red-700">{error}</p>
                                         </div>
-                                        <p className="text-sm text-[#441111] mt-1">
-                                            Only a few tickets remaining. Secure yours now!
-                                        </p>
                                     </div>
                                 )}
 
-                                {/* Mint Button */}
-                                <button
-                                    onClick={mintTicket}
-                                    disabled={isCurrentlyMinting}
-                                    className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold py-4 rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-lg shadow-lg"
-                                >
-                                    {isCurrentlyMinting ? (
-                                        <>
-                                            <Clock className="h-5 w-5 animate-spin" />
-                                            <span>Minting NFT Tickets...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Zap className="h-5 w-5" />
-                                            <span>Mint {ticketQuantity} NFT Ticket{ticketQuantity > 1 ? 's' : ''}</span>
-                                        </>
-                                    )}
-                                </button>
+                                {paymentStep === 'success' ? (
+                                    /* Success State */
+                                    <div className="text-center">
+                                        <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <Check className="h-8 w-8 text-white" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-[#003447] mb-2">Booking Confirmed!</h3>
+                                        <p className="text-[#441111] mb-4">Your ticket has been successfully booked and payment processed.</p>
+                                        <div className="bg-gradient-to-br from-[#F4FFEE]/50 to-[#CDBBB9]/50 rounded-xl p-4 mb-4">
+                                            <p className="text-sm text-[#003447]">
+                                                <strong>Ticket ID:</strong> {bookingState.currentTicket?._id}
+                                            </p>
+                                            <p className="text-sm text-[#003447]">
+                                                <strong>Type:</strong> {selectedTicketClass?.type}
+                                            </p>
+                                            <p className="text-sm text-[#003447]">
+                                                <strong>Amount:</strong> ₹{totalPrice}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => router.push('/profile/tickets')}
+                                            className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold py-3 rounded-full hover:scale-105 transition-all shadow-lg"
+                                        >
+                                            View My Tickets
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Ticket Selection */}
+                                        <div className="mb-6">
+                                            <h3 className="text-lg font-semibold text-[#003447] mb-4">Select Ticket Type</h3>
+                                            <div className="space-y-3">
+                                                {event.ticketClasses?.map((ticketClass) => {
+                                                    const availability = getTicketAvailability(ticketClass);
+                                                    const availabilityStatus = getAvailabilityStatus(availability.sold, availability.total);
+                                                    
+                                                    return (
+                                                        <div
+                                                            key={ticketClass._id}
+                                                            onClick={() => setSelectedTicketClass(ticketClass)}
+                                                            className={cn(
+                                                                "p-4 rounded-xl border-2 cursor-pointer transition-all",
+                                                                selectedTicketClass?._id === ticketClass._id
+                                                                    ? "border-[#E34B26] bg-gradient-to-br from-[#E34B26]/10 to-[#49747F]/10"
+                                                                    : "border-white/30 bg-white/20 hover:border-[#49747F]/50"
+                                                            )}
+                                                        >
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <h4 className="font-semibold text-[#003447]">{ticketClass.type}</h4>
+                                                                    <p className="text-2xl font-bold text-[#E34B26]">₹{ticketClass.price}</p>
+                                                                    <p className="text-sm text-[#49747F]">
+                                                                        {availability.total - availability.sold} tickets left
+                                                                    </p>
+                                                                </div>
+                                                                <span className={cn("text-xs font-medium", availabilityStatus.color)}>
+                                                                    {availabilityStatus.status}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
 
-                                {/* Security Note */}
-                                <p className="text-xs text-[#49747F] text-center mt-4">
-                                    🔒 Secure blockchain transaction • Your NFT tickets will be minted to your connected wallet
-                                </p>
+                                        {selectedTicketClass && (
+                                            <>
+                                                {/* Quantity Selector */}
+                                                <div className="mb-6">
+                                                    <label className="block text-sm font-medium text-[#003447] mb-2">
+                                                        Quantity
+                                                    </label>
+                                                    <div className="flex items-center space-x-3">
+                                                        <button
+                                                            onClick={() => setTicketQuantity(Math.max(1, ticketQuantity - 1))}
+                                                            className="w-10 h-10 rounded-full bg-white/50 border border-white/30 flex items-center justify-center hover:bg-white/70 transition-all text-[#003447] font-semibold"
+                                                        >
+                                                            -
+                                                        </button>
+                                                        <span className="text-xl font-semibold w-8 text-center text-[#003447]">{ticketQuantity}</span>
+                                                        <button
+                                                            onClick={() => setTicketQuantity(Math.min(10, ticketQuantity + 1))}
+                                                            className="w-10 h-10 rounded-full bg-white/50 border border-white/30 flex items-center justify-center hover:bg-white/70 transition-all text-[#003447] font-semibold"
+                                                        >
+                                                            +
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-xs text-[#49747F] mt-1">Maximum 10 tickets per transaction</p>
+                                                </div>
+
+                                                {/* Progress Bar */}
+                                                <div className="mb-6">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-sm font-medium text-[#003447]">Availability</span>
+                                                        <span className="text-sm text-[#441111]">
+                                                            {((availability.total - availability.sold) / 1000).toFixed(0)}k left
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-white/50 rounded-full h-3">
+                                                        <div
+                                                            className="bg-gradient-to-r from-[#E34B26] to-[#49747F] h-3 rounded-full transition-all duration-300"
+                                                            style={{ width: `${(availability.sold / availability.total) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Price Breakdown */}
+                                                <div className="mb-6 p-4 bg-white/40 backdrop-blur-sm rounded-xl border border-white/30">
+                                                    <h3 className="font-semibold text-[#003447] mb-3">Price Breakdown</h3>
+                                                    <div className="space-y-2 text-sm">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-[#441111]">{ticketQuantity} × {selectedTicketClass.type} Ticket</span>
+                                                            <span className="font-medium text-[#003447]">₹{totalPrice}</span>
+                                                        </div>
+                                                        <div className="flex justify-between">
+                                                            <span className="text-[#441111]">Platform Fee</span>
+                                                            <span className="font-medium text-[#003447]">₹{(parseFloat(totalPrice) * 0.02).toFixed(2)}</span>
+                                                        </div>
+                                                        <hr className="border-white/30" />
+                                                        <div className="flex justify-between font-bold text-lg">
+                                                            <span className="text-[#003447]">Total</span>
+                                                            <span className="text-[#E34B26]">₹{(parseFloat(totalPrice) * 1.02).toFixed(2)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Security Benefits */}
+                                                <div className="mb-6 p-4 bg-gradient-to-br from-[#F4FFEE]/50 to-[#CDBBB9]/50 rounded-xl border border-white/30">
+                                                    <div className="flex items-center space-x-2 mb-2">
+                                                        <Shield className="h-5 w-5 text-[#49747F]" />
+                                                        <span className="font-semibold text-[#003447]">Spectrate Secured</span>
+                                                    </div>
+                                                    <ul className="text-sm text-[#441111] space-y-1">
+                                                        <li>• Instant confirmation</li>
+                                                        <li>• Secure payment processing</li>
+                                                        <li>• 100% authentic tickets</li>
+                                                        <li>• 24/7 customer support</li>
+                                                    </ul>
+                                                </div>
+
+                                                {/* Warning */}
+                                                {availabilityStatus.status === 'Almost Sold Out' && (
+                                                    <div className="mb-6 p-4 bg-gradient-to-br from-red-100/50 to-orange-100/50 rounded-xl border border-red-200/50">
+                                                        <div className="flex items-center space-x-2">
+                                                            <AlertCircle className="h-5 w-5 text-[#E34B26]" />
+                                                            <span className="font-semibold text-[#E34B26]">Almost Sold Out!</span>
+                                                        </div>
+                                                        <p className="text-sm text-[#441111] mt-1">
+                                                            Only a few tickets remaining. Secure yours now!
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {/* Action Button */}
+                                                {paymentStep === 'select' && (
+                                                    <button
+                                                        onClick={handleBookTicket}
+                                                        disabled={bookingState.isBooking || !user}
+                                                        className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold py-4 rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-lg shadow-lg"
+                                                    >
+                                                        {bookingState.isBooking ? (
+                                                            <>
+                                                                <Loader className="h-5 w-5 animate-spin" />
+                                                                <span>Booking Tickets...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Zap className="h-5 w-5" />
+                                                                <span>Book {ticketQuantity} Ticket{ticketQuantity > 1 ? 's' : ''}</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+
+                                                {paymentStep === 'pay' && (
+                                                    <button
+                                                        onClick={handlePayment}
+                                                        disabled={bookingState.isPaying}
+                                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold py-4 rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-lg shadow-lg"
+                                                    >
+                                                        {bookingState.isPaying ? (
+                                                            <>
+                                                                <Loader className="h-5 w-5 animate-spin" />
+                                                                <span>Processing Payment...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <CreditCard className="h-5 w-5" />
+                                                                <span>Pay ₹{(parseFloat(totalPrice) * 1.02).toFixed(2)}</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+
+                                                {/* Security Note */}
+                                                <p className="text-xs text-[#49747F] text-center mt-4 flex items-center justify-center space-x-1">
+                                                    <Lock className="h-3 w-3" />
+                                                    <span>Secure payment powered by Razorpay</span>
+                                                </p>
+                                            </>
+                                        )}
+                                    </>
+                                )}
                             </div>
-
-
                         </div>
                     </div>
                 </div>

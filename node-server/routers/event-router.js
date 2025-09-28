@@ -9,7 +9,8 @@ import {
   updateEvent,
   deleteEvent,
   listEvents,
-  getEventDetails
+  getEventDetails,
+  getMyEvents
 } from "../controllers/event-controller.js";
 import { authenticateOrganizer } from "../middlewares/auth.js";
 
@@ -19,6 +20,8 @@ const router = express.Router();
 router.post("/create", authenticateOrganizer, createEvent);
 router.put("/:id", authenticateOrganizer, updateEvent);
 router.delete("/:id", authenticateOrganizer, deleteEvent);
+router.get("/my-events", authenticateOrganizer, getMyEvents); 
+
 
 // Public routes
 router.get("/", listEvents);

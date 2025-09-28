@@ -1,6 +1,6 @@
 'use client'
-import React, { useState } from 'react';
-import { Heart, Calendar, MapPin, Zap, Shield, Star, ChevronLeft, ChevronRight, Music, Users, Palette, Trophy, Gamepad2, Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Heart, Calendar, MapPin, Zap, Shield, Star, ChevronLeft, ChevronRight, Music, Users, Palette, Trophy, Gamepad2, Search, Filter, Loader } from 'lucide-react';
 import { cn } from '@/lib/utils'; import {
     Carousel,
     CarouselContent,
@@ -9,12 +9,20 @@ import { cn } from '@/lib/utils'; import {
     CarouselPrevious,
 } from "@/components/ui/carousel"
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { eventApi, Event } from '@/lib/api';
 
 const SpectateEvents: React.FC = () => {
+    const { user, loading } = useAuth('user');
+    const [events, setEvents] = useState<Event[]>([]);
+    const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
     const [activeCategory, setActiveCategory] = useState<string>('All');
-    const [likedEvents, setLikedEvents] = useState<Set<number>>(new Set());
-    const [currentCategoryIndex, setCurrentCategoryIndex] = useState(0);
+    const [likedEvents, setLikedEvents] = useState<Set<string>>(new Set());
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
+
     // Category data with icons and images
     const categoryData = [
         {
@@ -44,105 +52,49 @@ const SpectateEvents: React.FC = () => {
         }
     ];
 
-    // Mock event data
-    const events = [
-        {
-            id: 1,
-            name: "Cosmic Dreams Festival",
-            artist: "Multiple Artists",
-            date: "Dec 15, 2024",
-            time: "8:00 PM",
-            venue: "MetaVerse Arena",
-            location: "Los Angeles, CA",
-            image: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop",
-            price: 0.15,
-            category: "Music",
-            capacity: 50000,
-            sold: 35000,
-            rarity: "Legendary"
-        },
-        {
-            id: 2,
-            name: "Tech Summit 2024",
-            artist: "Industry Leaders",
-            date: "Jan 20, 2025",
-            time: "9:00 AM",
-            venue: "Innovation Center",
-            location: "San Francisco, CA",
-            image: "https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=400&h=300&fit=crop",
-            price: 0.08,
-            category: "Conference",
-            capacity: 5000,
-            sold: 4200,
-            rarity: "Rare"
-        },
-        {
-            id: 3,
-            name: "Digital Art Expo",
-            artist: "NFT Artists Collective",
-            date: "Feb 5, 2025",
-            time: "2:00 PM",
-            venue: "Gallery District",
-            location: "New York, NY",
-            image: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=300&fit=crop",
-            price: 0.05,
-            category: "Art",
-            capacity: 2000,
-            sold: 1800,
-            rarity: "Common"
-        },
-        {
-            id: 4,
-            name: "Champions League Final",
-            artist: "UEFA",
-            date: "May 30, 2025",
-            time: "3:00 PM",
-            venue: "MetaStadium",
-            location: "London, UK",
-            image: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=400&h=300&fit=crop",
-            price: 0.25,
-            category: "Sports",
-            capacity: 80000,
-            sold: 79500,
-            rarity: "Ultra Rare"
-        },
-        {
-            id: 5,
-            name: "Blockchain Gaming Con",
-            artist: "Web3 Gaming Studios",
-            date: "Mar 12, 2025",
-            time: "10:00 AM",
-            venue: "GameHub Convention Center",
-            location: "Austin, TX",
-            image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&h=300&fit=crop",
-            price: 0.12,
-            category: "Gaming",
-            capacity: 15000,
-            sold: 8500,
-            rarity: "Epic"
-        },
-        {
-            id: 6,
-            name: "Sunset Beach Vibes",
-            artist: "Tropical House DJs",
-            date: "Jul 4, 2025",
-            time: "6:00 PM",
-            venue: "Oceanside Amphitheater",
-            location: "Miami, FL",
-            image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=300&fit=crop",
-            price: 0.18,
-            category: "Music",
-            capacity: 25000,
-            sold: 12000,
-            rarity: "Rare"
+    // Fetch events from backend
+    useEffect(() => {
+        const fetchEvents = async () => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const response = await eventApi.getEvents();
+                setEvents(response.events);
+                setFilteredEvents(response.events);
+            } catch (err) {
+                console.error('Error fetching events:', err);
+                setError('Failed to load events. Please try again later.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchEvents();
+    }, []);
+
+    // Filter events based on category and search
+    useEffect(() => {
+        let filtered = events;
+
+        // Filter by category
+        if (activeCategory !== 'All') {
+            filtered = filtered.filter(event => event.category === activeCategory);
         }
-    ];
 
-    const filteredEvents = activeCategory === 'All'
-        ? events
-        : events.filter(event => event.category === activeCategory);
+        // Filter by search query
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter(event =>
+                event.name.toLowerCase().includes(query) ||
+                event.description?.toLowerCase().includes(query) ||
+                event.location?.toLowerCase().includes(query)
+            );
+        }
 
-    const toggleLike = (eventId: number): void => {
+        setFilteredEvents(filtered);
+    }, [events, activeCategory, searchQuery]);
+
+    const toggleLike = (eventId: string): void => {
         setLikedEvents(prev => {
             const newSet = new Set(prev);
             if (newSet.has(eventId)) {
@@ -165,9 +117,74 @@ const SpectateEvents: React.FC = () => {
         }
     };
 
-    const handleEventClick = (eventId: number) => {
-         router.push(`/event/${eventId}`); // navigate to dynamic event page
-};
+    const handleEventClick = (eventId: string) => {
+        router.push(`/event/${eventId}`);
+    };
+
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        return {
+            date: date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric' 
+            }),
+            time: date.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+            })
+        };
+    };
+
+    const getTicketPrice = (event: Event) => {
+        if (event.ticketClasses && event.ticketClasses.length > 0) {
+            const minPrice = Math.min(...event.ticketClasses.map(tc => tc.price));
+            return `₹${minPrice}`;
+        }
+        return '₹0';
+    };
+
+    const getTicketAvailability = (event: Event) => {
+        if (event.ticketClasses && event.ticketClasses.length > 0) {
+            const totalSupply = event.ticketClasses.reduce((sum, tc) => sum + tc.maxSupply, 0);
+            // For demo, assume 70% are sold (you can add sold count to your backend)
+            const sold = Math.floor(totalSupply * 0.7);
+            return { sold, total: totalSupply };
+        }
+        return { sold: 0, total: 0 };
+    };
+
+    if (loading || isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{
+                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
+            }}>
+                <div className="text-center">
+                    <Loader className="h-8 w-8 animate-spin text-[#003447] mx-auto mb-4" />
+                    <p className="text-[#003447] font-medium">Loading events...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{
+                background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
+            }}>
+                <div className="text-center bg-white/30 backdrop-blur-md rounded-2xl p-8 border border-white/20">
+                    <p className="text-[#E34B26] font-medium mb-4">{error}</p>
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-6 py-2 rounded-full font-semibold hover:scale-105 transition-all"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div
@@ -176,7 +193,7 @@ const SpectateEvents: React.FC = () => {
                 background: "linear-gradient(120deg, #F4FFEE 0%, #CDBBB9 30%, #49747F 70%, #003447 100%)"
             }}
         >
-            {/* Abstract SVG background patterns - same as login */}
+            {/* Abstract SVG background patterns */}
             <svg
                 className="absolute inset-0 w-full h-full pointer-events-none z-0"
                 viewBox="0 0 1440 810"
@@ -230,8 +247,11 @@ const SpectateEvents: React.FC = () => {
                                 <Shield className="h-4 w-4 text-[#003447]" />
                                 <span className="text-sm text-[#003447] font-medium">Secure Events</span>
                             </div>
-                            <button className="bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white px-6 py-2 rounded-full font-semibold hover:scale-105 transition-all shadow-lg">
-                                My Account
+                            <button 
+                                onClick={() => router.push('/profile')}
+                                className="bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white px-6 py-2 rounded-full font-semibold hover:scale-105 transition-all shadow-lg"
+                            >
+                                {user?.username || 'My Account'}
                             </button>
                         </div>
                     </div>
@@ -255,7 +275,9 @@ const SpectateEvents: React.FC = () => {
                                 <Search className="h-4 w-4 md:h-5 md:w-5 text-[#49747F] ml-3 md:ml-4" />
                                 <input
                                     type="text"
-                                    placeholder="Search events, artists, venues..."
+                                    placeholder="Search events, venues, locations..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
                                     className="flex-1 bg-transparent px-3 md:px-4 py-2 md:py-3 text-sm md:text-base text-[#003447] placeholder-[#49747F]/70 outline-none font-medium"
                                 />
                                 <button className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-3 py-2 md:px-6 md:py-3 rounded-full font-semibold hover:scale-105 transition-all text-sm md:text-base">
@@ -284,6 +306,7 @@ const SpectateEvents: React.FC = () => {
                 </div>
             </section>
 
+            {/* Categories Section */}
             <section className="relative z-10 px-4 py-12">
                 <div className="max-w-7xl mx-auto">
                     {/* All Categories Button */}
@@ -297,54 +320,56 @@ const SpectateEvents: React.FC = () => {
                                     : "bg-white/30 backdrop-blur-md text-[#003447] border border-white/20 hover:bg-white/40"
                             )}
                         >
-                            All Events
+                            All Events ({events.length})
                         </button>
                     </div>
 
                     {/* Category Carousel */}
-                    {/* Category Carousel */}
-                    <Carousel
-                        opts={{ align: "start" }}
-                        className="w-full"
-                    >
+                    <Carousel opts={{ align: "start" }} className="w-full">
                         <CarouselContent>
-                            {categoryData.map((category) => (
-                                <CarouselItem
-                                    key={category.name}
-                                    className="w-full sm:w-1/3 md:basis-1/5 px-2"
-                                >
-                                    <div
-                                        onClick={() => setActiveCategory(category.name)}
-                                        className={cn(
-                                            "relative group cursor-pointer transition-all duration-300",
-                                            activeCategory === category.name ? "scale-105" : "hover:scale-102"
-                                        )}
+                            {categoryData.map((category) => {
+                                const categoryCount = events.filter(e => e.category === category.name).length;
+                                return (
+                                    <CarouselItem
+                                        key={category.name}
+                                        className="w-full sm:w-1/3 md:basis-1/5 px-2"
                                     >
-                                        <div className="bg-white/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-white/20 shadow-lg hover:shadow-xl transition-all">
-                                            <div
-                                                className={cn(
-                                                    "w-8 h-8 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 rounded-full flex items-center justify-center transition-all",
-                                                    activeCategory === category.name
-                                                        ? "bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white"
-                                                        : "bg-white/50 text-[#49747F]"
-                                                )}
-                                            >
-                                                <div className="scale-75 md:scale-100">
-                                                    {getCategoryIcon(category.icon)}
+                                        <div
+                                            onClick={() => setActiveCategory(category.name)}
+                                            className={cn(
+                                                "relative group cursor-pointer transition-all duration-300",
+                                                activeCategory === category.name ? "scale-105" : "hover:scale-102"
+                                            )}
+                                        >
+                                            <div className="bg-white/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-white/20 shadow-lg hover:shadow-xl transition-all">
+                                                <div
+                                                    className={cn(
+                                                        "w-8 h-8 md:w-12 md:h-12 mx-auto mb-3 md:mb-4 rounded-full flex items-center justify-center transition-all",
+                                                        activeCategory === category.name
+                                                            ? "bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white"
+                                                            : "bg-white/50 text-[#49747F]"
+                                                    )}
+                                                >
+                                                    <div className="scale-75 md:scale-100">
+                                                        {getCategoryIcon(category.icon)}
+                                                    </div>
                                                 </div>
+                                                <h3
+                                                    className={cn(
+                                                        "text-center font-semibold transition-colors text-sm md:text-base",
+                                                        activeCategory === category.name ? "text-[#E34B26]" : "text-[#003447]"
+                                                    )}
+                                                >
+                                                    {category.name}
+                                                </h3>
+                                                <p className="text-xs text-[#49747F] text-center mt-1">
+                                                    ({categoryCount})
+                                                </p>
                                             </div>
-                                            <h3
-                                                className={cn(
-                                                    "text-center font-semibold transition-colors text-sm md:text-base",
-                                                    activeCategory === category.name ? "text-[#E34B26]" : "text-[#003447]"
-                                                )}
-                                            >
-                                                {category.name}
-                                            </h3>
                                         </div>
-                                    </div>
-                                </CarouselItem>
-                            ))}
+                                    </CarouselItem>
+                                );
+                            })}
                         </CarouselContent>
 
                         <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 p-2 md:p-3 rounded-full shadow-lg hover:bg-white/90 z-10">
@@ -353,12 +378,9 @@ const SpectateEvents: React.FC = () => {
                         <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 p-2 md:p-3 rounded-full shadow-lg hover:bg-white/90 z-10">
                             <ChevronRight className="h-4 w-4 md:h-6 md:w-6 text-gray-600" />
                         </CarouselNext>
-
                     </Carousel>
-
                 </div>
             </section>
-
 
             {/* Events Section */}
             <section className="relative z-10 px-4 py-12">
@@ -377,99 +399,112 @@ const SpectateEvents: React.FC = () => {
                     </div>
 
                     {/* Events Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredEvents.map((event) => (
-                            <div
-                                key={event.id}
-                                className="bg-white/30 backdrop-blur-md rounded-2xl overflow-hidden border border-white/20 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group hover:scale-105"
-                                onClick={() => handleEventClick(event.id)}
-                            >
-                                {/* Event Image */}
-                                <div className="relative h-48 overflow-hidden">
-                                    <img
-                                        src={event.image}
-                                        alt={event.name}
-                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-
-                                    {/* Like Button */}
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleLike(event.id);
-                                        }}
-                                        className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-full transition-all shadow-lg backdrop-blur-sm"
-                                    >
-                                        <Heart
-                                            className={cn(
-                                                "h-5 w-5 transition-colors",
-                                                likedEvents.has(event.id)
-                                                    ? 'fill-[#E34B26] text-[#E34B26]'
-                                                    : 'text-[#49747F]'
-                                            )}
-                                        />
-                                    </button>
-
-                                    {/* Price Badge */}
-                                    <div className="absolute bottom-4 right-4">
-                                        <span className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
-                                            ${event.price * 3000} {/* Convert ETH to USD approx */}
-                                        </span>
-                                    </div>
-
-                                    {/* Rarity Badge */}
-                                    <div className="absolute top-4 left-4">
-                                        <span className={cn(
-                                            "px-2 py-1 rounded-full text-xs font-semibold backdrop-blur-sm",
-                                            event.rarity === 'Legendary' ? 'bg-yellow-500/80 text-white' :
-                                                event.rarity === 'Ultra Rare' ? 'bg-purple-500/80 text-white' :
-                                                    event.rarity === 'Epic' ? 'bg-blue-500/80 text-white' :
-                                                        event.rarity === 'Rare' ? 'bg-green-500/80 text-white' :
-                                                            'bg-gray-500/80 text-white'
-                                        )}>
-                                            {event.rarity}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Event Info */}
-                                <div className="p-6">
-                                    <h3 className="text-lg font-bold text-[#003447] mb-2 line-clamp-1">{event.name}</h3>
-                                    <p className="text-[#441111] mb-3 line-clamp-1">{event.artist}</p>
-
-                                    <div className="flex items-center text-sm text-[#49747F] mb-2">
-                                        <Calendar className="h-4 w-4 mr-2 text-[#E34B26]" />
-                                        <span>{event.date} • {event.time}</span>
-                                    </div>
-
-                                    <div className="flex items-center text-sm text-[#49747F] mb-4">
-                                        <MapPin className="h-4 w-4 mr-2 text-[#E34B26]" />
-                                        <span className="line-clamp-1">{event.venue}, {event.location}</span>
-                                    </div>
-
-                                    {/* Availability Bar */}
-                                    <div className="mb-4">
-                                        <div className="flex justify-between text-xs text-[#49747F] mb-1">
-                                            <span>Availability</span>
-                                            <span>{Math.round((event.sold / event.capacity) * 100)}% sold</span>
-                                        </div>
-                                        <div className="w-full bg-white/50 rounded-full h-2">
-                                            <div
-                                                className="bg-gradient-to-r from-[#E34B26] to-[#49747F] h-2 rounded-full transition-all"
-                                                style={{ width: `${(event.sold / event.capacity) * 100}%` }}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Book Button */}
-                                    <button className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold py-3 rounded-full hover:scale-105 transition-all shadow-lg">
-                                        Book Tickets
-                                    </button>
-                                </div>
+                    {filteredEvents.length === 0 ? (
+                        <div className="text-center py-12">
+                            <div className="bg-white/30 backdrop-blur-md rounded-2xl p-8 border border-white/20 shadow-lg max-w-md mx-auto">
+                                <Star className="h-12 w-12 text-[#49747F] mx-auto mb-4" />
+                                <h3 className="text-xl font-semibold text-[#003447] mb-2">No Events Found</h3>
+                                <p className="text-[#441111]">
+                                    {searchQuery ? `No events match "${searchQuery}"` : `No ${activeCategory} events available`}
+                                </p>
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {filteredEvents.map((event) => {
+                                const { date, time } = formatDate(event.startTime);
+                                const availability = getTicketAvailability(event);
+                                const price = getTicketPrice(event);
+
+                                return (
+                                    <div
+                                        key={event._id}
+                                        className="bg-white/30 backdrop-blur-md rounded-2xl overflow-hidden border border-white/20 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group hover:scale-105"
+                                        onClick={() => handleEventClick(event._id)}
+                                    >
+                                        {/* Event Image */}
+                                        <div className="relative h-48 overflow-hidden">
+                                            <img
+                                                src={event.image || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop'}
+                                                alt={event.name}
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+
+                                            {/* Like Button */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleLike(event._id);
+                                                }}
+                                                className="absolute top-4 right-4 p-2 bg-white/90 hover:bg-white rounded-full transition-all shadow-lg backdrop-blur-sm"
+                                            >
+                                                <Heart
+                                                    className={cn(
+                                                        "h-5 w-5 transition-colors",
+                                                        likedEvents.has(event._id)
+                                                            ? 'fill-[#E34B26] text-[#E34B26]'
+                                                            : 'text-[#49747F]'
+                                                    )}
+                                                />
+                                            </button>
+
+                                            {/* Price Badge */}
+                                            <div className="absolute bottom-4 right-4">
+                                                <span className="bg-gradient-to-r from-[#E34B26] to-[#49747F] text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                                                    {price}
+                                                </span>
+                                            </div>
+
+                                            {/* Category Badge */}
+                                            <div className="absolute top-4 left-4">
+                                                <span className="bg-white/80 backdrop-blur-sm text-[#003447] px-2 py-1 rounded-full text-xs font-semibold">
+                                                    {event.category}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Event Info */}
+                                        <div className="p-6">
+                                            <h3 className="text-lg font-bold text-[#003447] mb-2 line-clamp-1">{event.name}</h3>
+                                            <p className="text-[#441111] mb-3 line-clamp-2 text-sm">{event.description || 'No description available'}</p>
+
+                                            <div className="flex items-center text-sm text-[#49747F] mb-2">
+                                                <Calendar className="h-4 w-4 mr-2 text-[#E34B26]" />
+                                                <span>{date} • {time}</span>
+                                            </div>
+
+                                            <div className="flex items-center text-sm text-[#49747F] mb-4">
+                                                <MapPin className="h-4 w-4 mr-2 text-[#E34B26]" />
+                                                <span className="line-clamp-1">{event.location || 'Location TBA'}</span>
+                                            </div>
+
+                                            {/* Availability Bar */}
+                                            {availability.total > 0 && (
+                                                <div className="mb-4">
+                                                    <div className="flex justify-between text-xs text-[#49747F] mb-1">
+                                                        <span>Availability</span>
+                                                        <span>{Math.round((availability.sold / availability.total) * 100)}% sold</span>
+                                                    </div>
+                                                    <div className="w-full bg-white/50 rounded-full h-2">
+                                                        <div
+                                                            className="bg-gradient-to-r from-[#E34B26] to-[#49747F] h-2 rounded-full transition-all"
+                                                            style={{ width: `${(availability.sold / availability.total) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Book Button */}
+                                            <button className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold py-3 rounded-full hover:scale-105 transition-all shadow-lg">
+                                                Book Tickets
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </section>
 

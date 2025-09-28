@@ -6,13 +6,145 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { FaGoogle, FaFacebookF, FaApple } from "react-icons/fa";
+import { useRouter } from "next/navigation";
 
 type SignupMode = "User" | "Organizer";
 
+interface FormData {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  organizerId?: string;
+}
+
+interface ApiError {
+  message: string;
+}
+
 export default function RegisterPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<SignupMode>("User");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [success, setSuccess] = useState<string>("");
+  
+  const [formData, setFormData] = useState<FormData>({
+    username: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    organizerId: ""
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    // Clear errors when user starts typing
+    if (error) setError("");
+  };
+
+  const validateForm = (): string | null => {
+    if (!formData.username.trim()) {
+      return "Username is required";
+    }
+    if (!formData.email.trim()) {
+      return "Email is required";
+    }
+    if (!formData.password) {
+      return "Password is required";
+    }
+    if (formData.password.length < 6) {
+      return "Password must be at least 6 characters long";
+    }
+    if (formData.password !== formData.confirmPassword) {
+      return "Passwords do not match";
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      return "Please enter a valid email address";
+    }
+    
+    return null;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    // Validate form
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
+      
+      const payload = {
+        username: formData.username.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        userType: mode === "Organizer" ? "organizer" : "user",
+        role: mode === "Organizer" ? "organizer" : "user",
+        // Note: You'll need to implement reCAPTCHA on the frontend
+        recaptchaToken: "dummy_token_for_now" // TODO: Implement reCAPTCHA
+      };
+
+      const response = await fetch(`${backendUrl}/api/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      setSuccess("Registration successful! Login to continue!");
+
+      
+      // Reset form
+      setFormData({
+        username: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        organizerId: ""
+      });
+
+      // Redirect after success (you can implement router.push here)
+      setTimeout(() => {
+        console.log("Redirecting to dashboard...");
+        router.push('/login');
+      }, 2000);
+    } catch (err) {
+      const error = err as ApiError;
+      setError(error.message || 'An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSocialLogin = (provider: string) => {
+    // TODO: Implement social login integration
+    console.log(`Social login with ${provider} - To be implemented`);
+    setError(`${provider} login integration coming soon!`);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center px-2 py-6 relative overflow-hidden"
@@ -51,7 +183,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col md:flex-row overflow-hidden bg-white/0 relative z-10">
         {/* Branding/Welcome Section */}
         <div className="flex-1 flex flex-col justify-center items-center py-10 px-6 bg-gradient-to-br from-[#F4FFEE] via-[#CDBBB9] to-[#49747F] relative">
-          {/* Spectrate logo (SVG based on your provided image) */}
+          {/* Spectrate logo */}
           <div className="flex items-center gap-3 mb-4">
             <span className="rounded-lg bg-white shadow-lg p-2 flex items-center justify-center">
               <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
@@ -90,7 +222,6 @@ export default function RegisterPage() {
             {/* Toggle Tabs */}
             <div className="mb-8 flex justify-center gap-2">
               {(["User", "Organizer"] as SignupMode[]).map((m) => (
-                // eslint-disable-next-line jsx-a11y/role-supports-aria-props
                 <button
                   key={m}
                   className={cn(
@@ -107,30 +238,60 @@ export default function RegisterPage() {
                 </button>
               ))}
             </div>
-            <h2 className="text-2xl font-bold text-[#003447] mb-6">{mode === "User" ? "Sign Up" : "Organizer Sign Up"}</h2>
-            <form className="flex flex-col gap-5">
+            
+            <h2 className="text-2xl font-bold text-[#003447] mb-6">
+              {mode === "User" ? "Sign Up" : "Organizer Sign Up"}
+            </h2>
+
+            {/* Error/Success Messages */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-lg text-sm">
+                {success}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-5">
               <div className="relative">
                 <Input
                   type="text"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleInputChange}
                   placeholder={mode === "User" ? "Username" : "Organizer Name"}
                   className="pl-4 bg-[#F4FFEE] text-[#003447] font-medium border border-[#CDBBB9] rounded-full focus:ring-2 focus:ring-[#E34B26] transition"
                   required
+                  disabled={isLoading}
                 />
               </div>
+              
               <div className="relative">
                 <Input
                   type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
                   placeholder={mode === "User" ? "Email" : "Organizer Email"}
                   className="pl-4 bg-[#F4FFEE] text-[#003447] font-medium border border-[#CDBBB9] rounded-full focus:ring-2 focus:ring-[#E34B26] transition"
                   required
+                  disabled={isLoading}
                 />
               </div>
+              
               <div className="relative">
                 <Input
                   type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
                   placeholder="Password"
                   className="pl-4 pr-12 bg-[#F4FFEE] text-[#003447] font-medium border border-[#CDBBB9] rounded-full focus:ring-2 focus:ring-[#E34B26] transition"
                   required
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
@@ -145,12 +306,17 @@ export default function RegisterPage() {
                   )}
                 </button>
               </div>
+              
               <div className="relative">
                 <Input
                   type={showConfirm ? "text" : "password"}
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
                   placeholder="Confirm Password"
                   className="pl-4 pr-12 bg-[#F4FFEE] text-[#003447] font-medium border border-[#CDBBB9] rounded-full focus:ring-2 focus:ring-[#E34B26] transition"
                   required
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
@@ -165,37 +331,68 @@ export default function RegisterPage() {
                   )}
                 </button>
               </div>
+              
               {mode === "Organizer" && (
                 <Input
                   type="text"
+                  name="organizerId"
+                  value={formData.organizerId}
+                  onChange={handleInputChange}
                   placeholder="Organizer ID (optional)"
                   className="pl-4 bg-[#F4FFEE] text-[#003447] font-medium border border-[#49747F] rounded-full focus:ring-2 focus:ring-[#49747F] transition"
+                  disabled={isLoading}
                 />
               )}
+              
               <Button
-                type="submit"
-                className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold rounded-full text-lg py-2 mt-2 shadow hover:scale-[1.03] transition"
+                onClick={handleSubmit}
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-[#E34B26] via-[#49747F] to-[#003447] text-white font-semibold rounded-full text-lg py-2 mt-2 shadow hover:scale-[1.03] transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {mode === "User" ? "Sign Up" : "Sign Up as Organizer"}
+                {isLoading 
+                  ? (mode === "User" ? "Signing Up..." : "Signing Up as Organizer...")
+                  : (mode === "User" ? "Sign Up" : "Sign Up as Organizer")
+                }
               </Button>
-            </form>
+            </div>
+            
             {/* Social sign up */}
             <div className="flex justify-center gap-6 mt-6">
-              <button className="bg-white/90 rounded-full p-2 shadow hover:bg-[#E34B26] transition" aria-label="Sign up with Google">
-                <FaGoogle className="text-[#E34B26] text-xl" />
+              <button 
+                onClick={() => handleSocialLogin('Google')}
+                className="bg-white/90 rounded-full p-2 shadow hover:bg-[#E34B26] hover:text-white transition" 
+                aria-label="Sign up with Google"
+                disabled={isLoading}
+              >
+                <FaGoogle className="text-[#E34B26] hover:text-white text-xl" />
               </button>
-              <button className="bg-white/90 rounded-full p-2 shadow hover:bg-[#49747F] transition" aria-label="Sign up with Facebook">
-                <FaFacebookF className="text-[#49747F] text-xl" />
+              <button 
+                onClick={() => handleSocialLogin('Facebook')}
+                className="bg-white/90 rounded-full p-2 shadow hover:bg-[#49747F] hover:text-white transition" 
+                aria-label="Sign up with Facebook"
+                disabled={isLoading}
+              >
+                <FaFacebookF className="text-[#49747F] hover:text-white text-xl" />
               </button>
-              <button className="bg-white/90 rounded-full p-2 shadow hover:bg-[#003447] transition" aria-label="Sign up with Apple">
-                <FaApple className="text-[#003447] text-xl" />
+              <button 
+                onClick={() => handleSocialLogin('Apple')}
+                className="bg-white/90 rounded-full p-2 shadow hover:bg-[#003447] hover:text-white transition" 
+                aria-label="Sign up with Apple"
+                disabled={isLoading}
+              >
+                <FaApple className="text-[#003447] hover:text-white text-xl" />
               </button>
             </div>
+            
             {/* Links */}
             <div className="flex justify-between items-center mt-4 text-sm text-[#49747F]">
-              <Link href="/login" className="hover:text-[#E34B26] underline">Already have an account? Sign In</Link>
+              <Link href="/login" className="hover:text-[#E34B26] underline">
+                Already have an account? Sign In
+              </Link>
               {mode === "Organizer" && (
-                <Link href="/learn-more" className="hover:text-[#E34B26] underline">Learn More</Link>
+                <Link href="/learn-more" className="hover:text-[#E34B26] underline">
+                  Learn More
+                </Link>
               )}
             </div>
           </div>
