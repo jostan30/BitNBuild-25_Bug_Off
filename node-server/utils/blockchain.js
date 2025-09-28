@@ -2,7 +2,9 @@ import {
     Client, PrivateKey, TokenCreateTransaction, TokenMintTransaction, TokenAssociateTransaction, TokenBurnTransaction,
     TransferTransaction, Hbar, AccountId, AccountCreateTransaction, TokenSupplyType, TokenType
 } from "@hashgraph/sdk";
+import dotenv from "dotenv";
 
+await dotenv.config();
 let client;
 
 export async function environmentSetup() {    
@@ -34,7 +36,6 @@ export async function createEventTicket(eventId, organiserId, organiserKeyStr) {
 
     const organiser = AccountId.fromString(organiserId);
     const organiserKey = PrivateKey.fromStringDer(organiserKeyStr);
-    const privateKey = PrivateKey.generateED25519();
 
     const nftCreateTx = await new TokenCreateTransaction()
                     .setTokenName(`EventTicket-${eventId}`)
@@ -43,9 +44,9 @@ export async function createEventTicket(eventId, organiserId, organiserKeyStr) {
                     .setDecimals(0)
                     .setInitialSupply(0)
                     .setTreasuryAccountId(organiser)
-                    .setAdminKey(privateKey)
+                    .setAdminKey(organiserKey)
                     .setSupplyType(TokenSupplyType.Infinite)
-                    .setSupplyKey(privateKey)
+                    .setSupplyKey(organiserKey)
                     .freezeWith(client);
     
     const nftCreateSign = await nftCreateTx.sign(organiserKey);
@@ -56,12 +57,12 @@ export async function createEventTicket(eventId, organiserId, organiserKeyStr) {
     console.log(`Created NFT with Token ID: ${tokenId}`);
     return {
         tokenId: tokenId.toString(), 
-        supplyKey: privateKey.toStringDer()
+        supplyKey: organiserKey.toStringDer()
     };
 }
 
 export async function mintAndTransferNFT(
-    tokenId, metadata, newOwner, organiser, supplyKeyStr, newOwnerKeyStr, organiserKeyStr
+    tokenId, metadata, newOwner, organiser, newOwnerKeyStr, organiserKeyStr
 ) {
     if (!client) {
         await environmentSetup();
@@ -70,14 +71,13 @@ export async function mintAndTransferNFT(
     const buyerkey = PrivateKey.fromStringDer(newOwnerKeyStr);
     const organiserId = AccountId.fromString(organiser);
     const organiserKey = PrivateKey.fromStringDer(organiserKeyStr);
-    const supplyKey = PrivateKey.fromStringDer(supplyKeyStr);
 
     const mintTx = await new TokenMintTransaction()
                     .setTokenId(tokenId)
                     .setMetadata([Buffer.from(metadata)])
                     .freezeWith(client);
     
-    const mintSign = await mintTx.sign(supplyKey);
+    const mintSign = await mintTx.sign(organiserKey);
     const mintSubmit = await mintSign.execute(client);
     const mintRx = await mintSubmit.getReceipt(client);
     const serialNumber = mintRx.serials[0].toString();

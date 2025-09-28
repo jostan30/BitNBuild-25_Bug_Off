@@ -1,4 +1,7 @@
 import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+await dotenv.config();
 
 const URI = process.env.MONGODB_URI;
 if (!URI) {

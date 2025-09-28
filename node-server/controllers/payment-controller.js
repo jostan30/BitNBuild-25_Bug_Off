@@ -4,7 +4,9 @@ import Payment from "../models/Payment.js";
 import Ticket from "../models/Ticket.js";
 import Event from "../models/Event.js";
 import { mintAndTransferNFT } from "../utils/blockchain.js";
+import dotenv from "dotenv";
 
+await dotenv.config();
 // Razorpay instance
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,

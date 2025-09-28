@@ -1,4 +1,4 @@
-import 'dotenv/config'; 
+import dotenv from 'dotenv';
 import express from "express";
 import rateLimit from "express-rate-limit";
 import connectDB from "./utils/db.js";
@@ -8,6 +8,7 @@ import eventRoutes from "./routers/event-router.js";
 import ticketRoutes from "./routers/ticket-router.js";
 import paymentRoutes from "./routers/payment-router.js"; // <-- Add payment router
 
+await dotenv.config();
 const app = express();
 app.use(express.json()); // Parse JSON bodies
 

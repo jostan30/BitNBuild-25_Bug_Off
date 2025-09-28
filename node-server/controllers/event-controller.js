@@ -1,10 +1,15 @@
 import  Event  from "../models/Event.js";
 import  TicketClass  from "../models/TicketClass.js";
 import { createEventTicket } from "../utils/blockchain.js";
+import User from "../models/User.js";
+import mongoose from "mongoose";
+
+import dotenv from "dotenv";
+await dotenv.config();
 // Create Event + Ticket Classes (Organizer Only)
 export const createEvent = async (req, res) => {
   try {
-    const { name, description, location, startTime, endTime, ticketExpiryHours, category, image, ticketClasses } = req.body;
+    const { name, description, location, startTime, endTime, ticketExpiryHours, category, image, ticketClasses, userId } = req.body;
 
     if (!name || !startTime || !endTime) {
       return res.status(400).json({ message: "Name, startTime and endTime are required" });
@@ -13,7 +18,7 @@ export const createEvent = async (req, res) => {
     // Create Event
     const event = new Event({
       name,
-      organiserId: req.user.id,
+      organiserId: new mongoose.Types.ObjectId(userId),
       description,
       location,
       startTime,
@@ -32,8 +37,8 @@ export const createEvent = async (req, res) => {
         if (!cls.type || !cls.maxSupply || !cls.price) {
           return res.status(400).json({ message: "Each ticket class must have type, maxSupply, and price" });
         }
-
-        const {tokenId, supplyKey} = await createEventTicket(event._id, req.user.walletId, req.user.privateKey);
+        const userDetails = await User.findById(event.organiserId);
+        const {tokenId, supplyKey} = await createEventTicket(event._id, userDetails.walletId, userDetails.privateKey);
 
         const ticketClass = new TicketClass({
           eventId: event._id,
