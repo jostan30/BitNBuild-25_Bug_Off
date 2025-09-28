@@ -133,26 +133,30 @@ const OrganizerDashboard: React.FC = () => {
     }
   }, [authLoading, user])
 
-  const getAuthHeaders = (): AuthHeaders => {
-    const token = sessionStorage.getItem("authToken")
-    if (!token) {
-      throw new Error("No authentication token found")
-    }
-    return {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    }
+  function getAuthHeaders(): HeadersInit {
+    const token = sessionStorage.getItem("authToken");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json"
+    };
+
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return headers; // TypeScript now knows this is HeadersInit
   }
+
 
   const loadEvents = async (): Promise<void> => {
     try {
       setLoading(true)
       setError(null)
-      
+
+
       const response = await fetch(`${backendUrl}/api/events/my-events`, {
+        method: "GET",
         headers: getAuthHeaders()
-      })
-      
+      });
+
+
+
       if (!response.ok) {
         const errorData: APIError = await response.json().catch(() => ({ message: "Unknown error" }))
         console.error("API Error:", errorData)
@@ -163,10 +167,10 @@ const OrganizerDashboard: React.FC = () => {
       console.log("Loaded events response:", data)
       console.log("Events count:", data.events?.length || 0)
       console.log("Organizer ID:", data.organizerId)
-      
+
       const transformedEvents: TransformedEvent[] = (data.events || []).map(transformBackendEvent)
       setEvents(transformedEvents)
-      
+
       if (transformedEvents.length === 0) {
         setError("No events found. Create your first event to get started!")
       }
@@ -270,7 +274,7 @@ const OrganizerDashboard: React.FC = () => {
       setDeleteLoading(true)
       console.log("Attempting to delete event:", eventId)
       console.log("Current user:", user)
-      
+
       const response = await fetch(`${backendUrl}/api/events/${eventId}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
@@ -280,7 +284,7 @@ const OrganizerDashboard: React.FC = () => {
         const errorData: APIError = await response.json().catch(() => ({ message: "Unknown error" }))
         console.error("Delete failed with status:", response.status)
         console.error("Error data:", errorData)
-        
+
         if (response.status === 403) {
           throw new Error(`Unauthorized: ${errorData.message || 'You can only delete your own events'}`)
         } else if (response.status === 404) {
@@ -330,23 +334,23 @@ const OrganizerDashboard: React.FC = () => {
         organiserId: user?.id || "demo-user",
         ticketExpiryHours: 24,
         ticketClasses: [
-          { 
-            _id: "tc1", 
-            eventId: "demo-evt-1", 
-            type: "General", 
-            maxSupply: 200, 
-            soldCount: 90, 
-            price: 499, 
-            tokenAddress: null 
+          {
+            _id: "tc1",
+            eventId: "demo-evt-1",
+            type: "General",
+            maxSupply: 200,
+            soldCount: 90,
+            price: 499,
+            tokenAddress: null
           },
-          { 
-            _id: "tc2", 
-            eventId: "demo-evt-1", 
-            type: "VIP", 
-            maxSupply: 50, 
-            soldCount: 25, 
-            price: 1299, 
-            tokenAddress: null 
+          {
+            _id: "tc2",
+            eventId: "demo-evt-1",
+            type: "VIP",
+            maxSupply: 50,
+            soldCount: 25,
+            price: 1299,
+            tokenAddress: null
           },
         ],
       },
@@ -362,23 +366,23 @@ const OrganizerDashboard: React.FC = () => {
         organiserId: user?.id || "demo-user",
         ticketExpiryHours: 48,
         ticketClasses: [
-          { 
-            _id: "tc3", 
-            eventId: "demo-evt-2", 
-            type: "General", 
-            maxSupply: 1000, 
-            soldCount: 820, 
-            price: 999, 
-            tokenAddress: null 
+          {
+            _id: "tc3",
+            eventId: "demo-evt-2",
+            type: "General",
+            maxSupply: 1000,
+            soldCount: 820,
+            price: 999,
+            tokenAddress: null
           },
-          { 
-            _id: "tc4", 
-            eventId: "demo-evt-2", 
-            type: "VIP", 
-            maxSupply: 150, 
-            soldCount: 140, 
-            price: 2499, 
-            tokenAddress: null 
+          {
+            _id: "tc4",
+            eventId: "demo-evt-2",
+            type: "VIP",
+            maxSupply: 150,
+            soldCount: 140,
+            price: 2499,
+            tokenAddress: null
           },
         ],
       },
@@ -617,11 +621,10 @@ const OrganizerDashboard: React.FC = () => {
                 filteredEvents.map((event: TransformedEvent, idx: number) => (
                   <div
                     key={event.id}
-                    className={`p-6 rounded-xl cursor-pointer transition-all backdrop-blur-sm border-2 group ${
-                      selectedEvent === idx
-                        ? "bg-white/40 text-[#49747F] shadow-xl border-[#E34B26] backdrop-blur-xl"
-                        : "bg-white/20 border-white/40 hover:shadow-lg hover:border-[#E34B26]/50 hover:bg-white/30 text-[#49747F]"
-                    }`}
+                    className={`p-6 rounded-xl cursor-pointer transition-all backdrop-blur-sm border-2 group ${selectedEvent === idx
+                      ? "bg-white/40 text-[#49747F] shadow-xl border-[#E34B26] backdrop-blur-xl"
+                      : "bg-white/20 border-white/40 hover:shadow-lg hover:border-[#E34B26]/50 hover:bg-white/30 text-[#49747F]"
+                      }`}
                     onClick={() => handleEventClick(idx)}
                   >
                     <div className="flex items-start justify-between">
@@ -706,11 +709,10 @@ const OrganizerDashboard: React.FC = () => {
                         <button
                           key={tab.key}
                           onClick={() => setActiveTab(tab.key)}
-                          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                            activeTab === tab.key
-                              ? "border-[#E34B26] text-[#E34B26]"
-                              : "border-transparent text-[#49747F]/70 hover:text-[#49747F] hover:border-[#49747F]/30"
-                          }`}
+                          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.key
+                            ? "border-[#E34B26] text-[#E34B26]"
+                            : "border-transparent text-[#49747F]/70 hover:text-[#49747F] hover:border-[#49747F]/30"
+                            }`}
                         >
                           <Icon className="text-xs" />
                           {tab.label}
