@@ -1,11 +1,11 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Loader, Shield, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type LoginMode = "User" | "Organizer";
 
-// At the top of your page.tsx, inside declare global
 declare global {
   interface Window {
     grecaptcha: {
@@ -23,15 +23,21 @@ declare global {
       getResponse: (widgetId: number) => string;
       reset?: (widgetId: number) => void;
     };
-    onRecaptchaLoad?: () => void; // ✅ Add it directly here
+    onRecaptchaLoad?: () => void;
   }
 }
 
 // API utility functions (inline for demo)
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+// API utility functions with better error handling
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 const authAPI = {
   login: async (loginData: unknown) => {
+    if (!API_BASE_URL) {
+      throw new Error('API configuration is missing');
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
@@ -50,6 +56,10 @@ const authAPI = {
   },
 
   socialLogin: async (socialData: unknown) => {
+    if (!API_BASE_URL) {
+      throw new Error('API configuration is missing');
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/auth/social-login`, {
       method: 'POST',
       headers: {
@@ -86,6 +96,14 @@ export default function LoginPage() {
 
   // Load reCAPTCHA script
   useEffect(() => {
+    const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+    
+    if (!siteKey) {
+      console.error('reCAPTCHA site key is missing');
+      setError('Security verification is not configured');
+      return;
+    }
+
     if (window.grecaptcha) {
       setRecaptchaLoaded(true);
       return;
@@ -99,12 +117,15 @@ export default function LoginPage() {
     script.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
     script.async = true;
     script.defer = true;
+    script.onerror = () => {
+      console.error('Failed to load reCAPTCHA script');
+      setError('Failed to load security verification');
+    };
     document.head.appendChild(script);
 
+    // Don't cleanup script on unmount to prevent issues
     return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
+      // Cleanup is handled by Next.js
     };
   }, []);
 
@@ -112,7 +133,11 @@ export default function LoginPage() {
   useEffect(() => {
     if (recaptchaLoaded && window.grecaptcha && recaptchaRef.current && recaptchaWidgetId.current === null) {
       try {
-        const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!;
+        const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+        if (!siteKey) {
+          throw new Error('reCAPTCHA site key is missing');
+        }
+        
         recaptchaWidgetId.current = window.grecaptcha.render(recaptchaRef.current, {
           sitekey: siteKey,
           theme: 'light',
@@ -139,8 +164,15 @@ export default function LoginPage() {
   };
 
   const resetReCaptcha = () => {
-    if (window.grecaptcha && recaptchaWidgetId.current !== null) {
-      window.grecaptcha.reset!(recaptchaWidgetId.current);
+    if (window.grecaptcha && window.grecaptcha.reset && recaptchaWidgetId.current !== null) {
+      window.grecaptcha.reset(recaptchaWidgetId.current);
+    }
+  };
+
+  // Safe session storage helper
+  const setSessionStorage = (key: string, value: string) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(key, value);
     }
   };
 
@@ -184,6 +216,12 @@ export default function LoginPage() {
         sessionStorage.setItem('user', JSON.stringify(result.user));
         sessionStorage.setItem('userType', result.user.role);
       }
+      // Save token and user info in sessionStorage for route protection
+      if (result.token && result.user) {
+        setSessionStorage('authToken', result.token);
+        setSessionStorage('user', JSON.stringify(result.user));
+        setSessionStorage('userType', result.user.role);
+      }
 
       setSuccess("Login successful! Redirecting...");
 
@@ -210,6 +248,11 @@ export default function LoginPage() {
       resetReCaptcha();
 
     };
+      resetReCaptcha();
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
     const handleSocialLogin = async (provider: string) => {
       setIsLoading(true);
@@ -236,6 +279,14 @@ export default function LoginPage() {
           sessionStorage.setItem('authToken', result.token);
           sessionStorage.setItem('user', JSON.stringify(result.user));
         }
+      const result = await authAPI.socialLogin(socialData);
+      
+      setSuccess(`${provider} login successful! Redirecting...`);
+      
+      if (result.token) {
+        setSessionStorage('authToken', result.token);
+        setSessionStorage('user', JSON.stringify(result.user));
+      }
 
         setTimeout(() => {
           const redirectUrl = mode === "User" ? '/dashboard' : '/organizer/dashboard';
@@ -245,18 +296,36 @@ export default function LoginPage() {
 
       } catch (error: unknown) {
         console.error('Login error:', error);
+      setTimeout(() => {
+        const redirectUrl = mode === "User" ? '/dashboard' : '/organizer/dashboard';
+        console.log(`Redirecting to ${redirectUrl}...`);
+        // window.location.href = redirectUrl;
+      }, 2000);
+      
+    } catch (error: unknown) {
+      console.error('Social login error:', error);
 
         if (error instanceof Error) {
           setError(error.message || 'Login failed. Please try again.');
         } else {
           setError('Login failed. Please try again.');
         }
+      if (error instanceof Error) {
+        setError(error.message || 'Login failed. Please try again.');
+      } else {
+        setError('Login failed. Please try again.');
+      }
 
         resetReCaptcha();
       } finally {
         setIsLoading(false);
       }
 
+      resetReCaptcha();
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
       return (
         <div
@@ -540,4 +609,18 @@ export default function LoginPage() {
       );
     }
   }
+}
+
+            {/* Security Notice */}
+            <div className="mt-6 text-center">
+              <p className="text-xs text-[#49747F]/80 flex items-center justify-center space-x-1">
+                <span>🔒</span>
+                <span>Protected by reCAPTCHA • SSL Secured</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
