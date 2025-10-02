@@ -10,9 +10,19 @@ import {
 import { useRouter } from 'next/navigation';
 import { ticketApi, authApi, api, TicketWithDetails, User as UserType } from '@/lib/api';
 
+
+type CurrentUser = {
+  email: string;
+  id: string;
+  lastLogin: string;
+  role: 'user' | 'organizer' | 'admin';
+  username: string;
+}
+
+
 const ProfilePage = () => {
     const router = useRouter();
-    const [user, setUser] = useState<UserType | null>(null);
+    const [user, setUser] = useState<CurrentUser | null>(null);
     const [recentTickets, setRecentTickets] = useState<TicketWithDetails[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -20,9 +30,7 @@ const ProfilePage = () => {
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<TicketWithDetails | null>(null);
     const [profileData, setProfileData] = useState({
-        username: '',
-        phone: '',
-        bio: ''
+        username: ''
     });
 
     // Load user and tickets on component mount
@@ -44,29 +52,17 @@ const ProfilePage = () => {
                 const freshUser = tokenResponse.user;
                 
                 // Map backend user fields to frontend expectations
-                const mappedUser: UserType = {
-                    _id: freshUser.id || freshUser._id,
+                const mappedUser: CurrentUser = {
+                    id: freshUser._id || freshUser._id,
                     username: freshUser.username,
                     email: freshUser.email,
                     role: freshUser.role,
-                    phone: freshUser.phone || '',
-                    bio: freshUser.bio || '',
-                    walletId: freshUser.walletId || '',
-                    walletAddress: freshUser.walletAddress || '',
-                    captchaVerified: freshUser.captchaVerified || false,
-                    isActive: freshUser.isActive !== false,
-                    isEmailVerified: freshUser.isEmailVerified || false,
-                    profileImage: freshUser.profileImage || '',
-                    createdAt: freshUser.createdAt || new Date().toISOString(),
-                    updatedAt: freshUser.updatedAt,
-                    lastLogin: freshUser.lastLogin || ''
+                    lastLogin:freshUser.lastLogin ?? ""
                 };
                 
                 setUser(mappedUser);
                 setProfileData({
                     username: mappedUser.username,
-                    phone: mappedUser.phone || '',
-                    bio: mappedUser.bio || ''
                 });
 
                 // Fetch user's recent tickets
@@ -130,24 +126,12 @@ const ProfilePage = () => {
             const updatedUserResponse = await authApi.updateProfile(profileData);
             
             // Map the response to match frontend expectations
-            const updatedUser: UserType = {
+            const updatedUser: CurrentUser = {
                 ...user!,
                 username: updatedUserResponse.user.username || profileData.username,
-                phone: updatedUserResponse.user.phone || profileData.phone,
-                bio: updatedUserResponse.user.bio || profileData.bio,
-                // Keep other fields from current user
-                _id: updatedUserResponse.user._id || updatedUserResponse.user.id || user!._id,
                 email: updatedUserResponse.user.email || user!.email,
                 role: updatedUserResponse.user.role || user!.role,
-                walletId: updatedUserResponse.user.walletId || user!.walletId,
-                walletAddress: updatedUserResponse.user.walletAddress || user!.walletAddress,
-                captchaVerified: updatedUserResponse.user.captchaVerified || user!.captchaVerified,
-                isActive: updatedUserResponse.user.isActive !== false,
-                isEmailVerified: updatedUserResponse.user.isEmailVerified || user!.isEmailVerified,
-                profileImage: updatedUserResponse.user.profileImage || user!.profileImage,
-                createdAt: updatedUserResponse.user.createdAt || user!.createdAt,
-                updatedAt: updatedUserResponse.user.updatedAt,
-                lastLogin: updatedUserResponse.user.lastLogin || user!.lastLogin
+
             };
             
             setUser(updatedUser);
@@ -308,12 +292,7 @@ const ProfilePage = () => {
                                     <span className="bg-[#E34B26] text-white px-3 py-1 rounded-full text-sm font-medium capitalize">
                                         {user.role}
                                     </span>
-                                    {user.captchaVerified && (
-                                        <div className="flex items-center space-x-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs">
-                                            <Shield className="h-3 w-3" />
-                                            <span>Verified</span>
-                                        </div>
-                                    )}
+                                  
                                 </div>
                             </div>
                         </div>
@@ -359,12 +338,7 @@ const ProfilePage = () => {
                                     </div>
                                     <div>
                                         <p className="text-sm text-[#49747F]">Member Since</p>
-                                        <p className="text-lg font-bold text-[#003447]">
-                                            {new Date(user.createdAt).toLocaleDateString('en-US', { 
-                                                month: 'short', 
-                                                year: 'numeric' 
-                                            })}
-                                        </p>
+                                      
                                     </div>
                                 </div>
                             </div>
@@ -500,8 +474,6 @@ const ProfilePage = () => {
                                             // Reset profile data when canceling
                                             setProfileData({
                                                 username: user.username,
-                                                phone: user.phone || '',
-                                                bio: user.bio || ''
                                             });
                                             setError(null);
                                         }
@@ -537,26 +509,6 @@ const ProfilePage = () => {
                                         />
                                         <p className="text-xs text-[#49747F] mt-1">Email cannot be changed</p>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-[#003447] mb-2">Phone</label>
-                                        <input
-                                            type="tel"
-                                            value={profileData.phone}
-                                            onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
-                                            className="w-full px-4 py-3 bg-white/50 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-[#E34B26]/20"
-                                            placeholder="Add your phone number"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-[#003447] mb-2">Bio</label>
-                                        <textarea
-                                            value={profileData.bio}
-                                            onChange={(e) => setProfileData({...profileData, bio: e.target.value})}
-                                            className="w-full px-4 py-3 bg-white/50 rounded-lg border border-white/30 focus:outline-none focus:ring-2 focus:ring-[#E34B26]/20"
-                                            placeholder="Tell us about yourself"
-                                            rows={3}
-                                        />
-                                    </div>
                                     <div className="flex space-x-3">
                                         <button
                                             onClick={handleProfileUpdate}
@@ -569,8 +521,6 @@ const ProfilePage = () => {
                                             onClick={() => {
                                                 setProfileData({
                                                     username: user.username,
-                                                    phone: user.phone || '',
-                                                    bio: user.bio || ''
                                                 });
                                                 setIsEditingProfile(false);
                                                 setError(null);
@@ -591,35 +541,8 @@ const ProfilePage = () => {
                                             <p className="font-medium text-[#003447] capitalize">{user.role}</p>
                                         </div>
                                     </div>
-                                    {user.phone && (
-                                        <div className="flex items-center space-x-3">
-                                            <Phone className="h-5 w-5 text-[#49747F]" />
-                                            <div>
-                                                <p className="text-sm text-[#49747F]">Phone</p>
-                                                <p className="font-medium text-[#003447]">{user.phone}</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {user.bio && (
-                                        <div className="flex items-start space-x-3">
-                                            <Edit3 className="h-5 w-5 text-[#49747F] mt-1" />
-                                            <div>
-                                                <p className="text-sm text-[#49747F]">Bio</p>
-                                                <p className="font-medium text-[#003447]">{user.bio}</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {user.walletAddress && (
-                                        <div className="flex items-center space-x-3">
-                                            <Wallet className="h-5 w-5 text-[#49747F]" />
-                                            <div>
-                                                <p className="text-sm text-[#49747F]">Wallet Address</p>
-                                                <p className="font-medium text-[#003447] font-mono text-sm">
-                                                    {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
+                                  
+                                
                                 </div>
                             )}
                         </div>

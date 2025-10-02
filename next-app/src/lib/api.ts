@@ -1,13 +1,21 @@
 // lib/api-client.ts
 // This version supports sessionStorage integration for persistence
 
+type CurrentUser = {
+  email: string;
+  id: string;
+  lastLogin: string;
+  role: 'user' | 'organizer' | 'admin';
+  username: string;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL
   ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
   : 'http://localhost:5000/api';
 
 // In-memory token storage with sessionStorage synchronization
 let authToken: string | null = null;
-let currentUser: any = null;
+let currentUser: CurrentUser | null = null;
 
 // Helper function to safely access sessionStorage
 const getSessionStorage = (key: string): string | null => {
@@ -46,11 +54,11 @@ const removeSessionStorage = (key: string): void => {
 const initializeFromStorage = () => {
   const storedToken = getSessionStorage('authToken');
   const storedUser = getSessionStorage('user');
-  
+
   if (storedToken) {
     authToken = storedToken;
   }
-  
+
   if (storedUser) {
     try {
       currentUser = JSON.parse(storedUser);
@@ -82,7 +90,7 @@ class ApiClient {
   }
 
   // Set current user (called after login/token verification)
-  setCurrentUser(user: any) {
+  setCurrentUser(user: CurrentUser) {
     currentUser = user;
     setSessionStorage('user', JSON.stringify(user));
   }
@@ -97,7 +105,7 @@ class ApiClient {
   }
 
   // Get current user with sessionStorage fallback
-  getCurrentUser(): any {
+  getCurrentUser(): CurrentUser | null {
     // Always check sessionStorage as fallback
     if (!currentUser) {
       const storedUser = getSessionStorage('user');
@@ -142,10 +150,10 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
-      
+
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`;
-        
+
         try {
           const errorData = await response.json();
           errorMessage = errorData.message || errorMessage;
@@ -153,7 +161,7 @@ class ApiClient {
           // If response is not JSON, use status text
           errorMessage = `${response.status} ${response.statusText}`;
         }
-        
+
         throw new Error(errorMessage);
       }
 
@@ -221,7 +229,7 @@ export const ticketApi = {
     if (params?.status) searchParams.append('status', params.status);
     if (params?.page) searchParams.append('page', params.page.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
-    
+
     const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
     return api.get<{ tickets: TicketWithDetails[]; pagination: PaginationInfo }>(`/tickets/my-tickets${query}`);
   },
@@ -237,8 +245,17 @@ export const paymentApi = {
 export const authApi = {
   login: async (credentials: LoginData) => {
     const result = await api.post<{ token: string; user: BackendUser }>('/auth/login', credentials);
-    
-    // Map backend user response to frontend format
+
+    // Map backend user response to CurrentUser format
+    const mappedCurrentUser: CurrentUser = {
+      id: result.user.id || result.user._id || '',
+      username: result.user.username || '',
+      email: result.user.email || '',
+      role: result.user.role || 'user',
+      lastLogin: result.user.lastLogin || new Date().toISOString()
+    };
+
+    // Map backend user response to frontend User format
     const mappedUser: User = {
       _id: result.user.id || result.user._id || '',
       username: result.user.username || '',
@@ -256,18 +273,27 @@ export const authApi = {
       updatedAt: result.user.updatedAt,
       lastLogin: result.user.lastLogin || ''
     };
-    
+
     // Set token and user in both memory and sessionStorage
     api.setAuthToken(result.token);
-    api.setCurrentUser(mappedUser);
-    
+    api.setCurrentUser(mappedCurrentUser);
+
     return { token: result.token, user: mappedUser };
   },
-  
+
   signup: async (userData: SignupData) => {
     const result = await api.post<{ token: string; user: BackendUser }>('/auth/signup', userData);
-    
-    // Map backend user response to frontend format
+
+    // Map backend user response to CurrentUser format
+    const mappedCurrentUser: CurrentUser = {
+      id: result.user.id || result.user._id || '',
+      username: result.user.username || '',
+      email: result.user.email || '',
+      role: result.user.role || 'user',
+      lastLogin: result.user.lastLogin || new Date().toISOString()
+    };
+
+    // Map backend user response to frontend User format
     const mappedUser: User = {
       _id: result.user.id || result.user._id || '',
       username: result.user.username || '',
@@ -285,18 +311,27 @@ export const authApi = {
       updatedAt: result.user.updatedAt,
       lastLogin: result.user.lastLogin || ''
     };
-    
+
     // Set token and user in both memory and sessionStorage
     api.setAuthToken(result.token);
-    api.setCurrentUser(mappedUser);
-    
+    api.setCurrentUser(mappedCurrentUser);
+
     return { token: result.token, user: mappedUser };
   },
-  
+
   verifyToken: async () => {
     const result = await api.get<{ valid: boolean; user: BackendUser }>('/auth/verify-token');
-    
-    // Map backend user response to frontend format
+
+    // Map backend user response to CurrentUser format
+    const mappedCurrentUser: CurrentUser = {
+      id: result.user.id || result.user._id || '',
+      username: result.user.username || '',
+      email: result.user.email || '',
+      role: result.user.role || 'user',
+      lastLogin: result.user.lastLogin || new Date().toISOString()
+    };
+
+    // Map backend user response to frontend User format
     const mappedUser: User = {
       _id: result.user.id || result.user._id || '',
       username: result.user.username || '',
@@ -314,14 +349,26 @@ export const authApi = {
       updatedAt: result.user.updatedAt,
       lastLogin: result.user.lastLogin || ''
     };
-    
+
+    // Update current user in storage
+    api.setCurrentUser(mappedCurrentUser);
+
     return { valid: result.valid, user: mappedUser };
   },
-  
+
   updateProfile: async (profileData: UpdateProfileData) => {
     const result = await api.patch<{ user: BackendUser; message?: string }>('/auth/profile', profileData);
-    
-    // Map backend user response to frontend format
+
+    // Map backend user response to CurrentUser format
+    const mappedCurrentUser: CurrentUser = {
+      id: result.user.id || result.user._id || '',
+      username: result.user.username || '',
+      email: result.user.email || '',
+      role: result.user.role || 'user',
+      lastLogin: result.user.lastLogin || new Date().toISOString()
+    };
+
+    // Map backend user response to frontend User format
     const mappedUser: User = {
       _id: result.user.id || result.user._id || '',
       username: result.user.username || '',
@@ -339,14 +386,26 @@ export const authApi = {
       updatedAt: result.user.updatedAt,
       lastLogin: result.user.lastLogin || ''
     };
-    
+
+    // Update current user in storage
+    api.setCurrentUser(mappedCurrentUser);
+
     return { user: mappedUser, message: result.message };
   },
-  
+
   getProfile: async () => {
     const result = await api.get<{ user: BackendUser }>('/auth/profile');
-    
-    // Map backend user response to frontend format
+
+    // Map backend user response to CurrentUser format
+    const mappedCurrentUser: CurrentUser = {
+      id: result.user.id || result.user._id || '',
+      username: result.user.username || '',
+      email: result.user.email || '',
+      role: result.user.role || 'user',
+      lastLogin: result.user.lastLogin || new Date().toISOString()
+    };
+
+    // Map backend user response to frontend User format
     const mappedUser: User = {
       _id: result.user.id || result.user._id || '',
       username: result.user.username || '',
@@ -364,10 +423,13 @@ export const authApi = {
       updatedAt: result.user.updatedAt,
       lastLogin: result.user.lastLogin || ''
     };
-    
+
+    // Update current user in storage
+    api.setCurrentUser(mappedCurrentUser);
+
     return { user: mappedUser };
   },
-  
+
   logout: () => {
     api.clearAuth();
     return Promise.resolve({ message: 'Logged out successfully' });
@@ -381,7 +443,7 @@ export const walletApi = {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.append('page', params.page.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
-    
+
     const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
     return api.get<{ transactions: WalletTransaction[]; pagination: PaginationInfo }>(`/wallet/${walletId}/transactions${query}`);
   },
@@ -390,6 +452,9 @@ export const walletApi = {
 
 // Export the api instance for direct use if needed
 export { api };
+
+// Export CurrentUser type
+export type { CurrentUser };
 
 // Types - Backend User format (as returned by your backend)
 interface BackendUser {
@@ -469,7 +534,8 @@ export interface Ticket {
   createdAt: string;
 }
 
-export interface TicketWithDetails extends Ticket {
+export interface TicketWithDetails {
+  _id: string;
   ticketClassId: {
     _id: string;
     eventId: Event;
@@ -484,6 +550,14 @@ export interface TicketWithDetails extends Ticket {
     username: string;
     email: string;
   };
+  serial?: number;
+  qrHash?: string;
+  status: 'Minted' | 'Active' | 'Used' | 'Returned' | 'Expired';
+  purchaseSlot: string;
+  paymentStatus: 'Pending' | 'Completed' | 'Failed';
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  createdAt: string;
 }
 
 export interface PaginationInfo {

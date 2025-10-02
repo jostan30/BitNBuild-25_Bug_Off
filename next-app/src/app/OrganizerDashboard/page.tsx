@@ -100,10 +100,10 @@ interface APIError {
   }
 }
 
-interface AuthHeaders {
-  Authorization: string
-  "Content-Type": string
-}
+// interface AuthHeaders {
+//   Authorization: string
+//   "Content-Type": string
+// }
 
 interface TabConfig {
   key: ActiveTab
@@ -331,7 +331,7 @@ const OrganizerDashboard: React.FC = () => {
         description: "A preview-only demo event to let you explore the dashboard.",
         category: "Technology",
         image: "",
-        organiserId: user?.id || "demo-user",
+        organiserId: user?._id || "demo-user",
         ticketExpiryHours: 24,
         ticketClasses: [
           {
@@ -363,7 +363,7 @@ const OrganizerDashboard: React.FC = () => {
         description: "Completed demo event for testing analytics and tickets.",
         category: "Music",
         image: "",
-        organiserId: user?.id || "demo-user",
+        organiserId: user?._id || "demo-user",
         ticketExpiryHours: 48,
         ticketClasses: [
           {
